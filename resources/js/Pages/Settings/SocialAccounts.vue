@@ -81,7 +81,7 @@ const facebookLoginUrl = ref(props.facebook_login_url || '#')
 
 const syncNow = async (accountId) => {
     try {
-        const response = await axios.post(`settings/social-accounts/${accountId}/sync`)
+        const response = await axios.post(`/settings/social-accounts/${accountId}/sync`)
         console.log(response.data.message) // "Sync job queued"
     } catch (error) {
         console.error('Sync failed:', error.response?.data || error.message)
@@ -91,7 +91,7 @@ const syncNow = async (accountId) => {
 const disconnect = async (accountId) => {
     if (confirm('Are you sure you want to disconnect this account?')) {
         try {
-            const response = await axios.post(`settings//social-accounts/${accountId}/disconnect`)
+            const response = await axios.post(`/settings/social-accounts/${accountId}/disconnect`)
             console.log(response.data.message) // "Account disconnected"
         } catch (error) {
             console.error('Disconnect failed:', error.response?.data || error.message)
