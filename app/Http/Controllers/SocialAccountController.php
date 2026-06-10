@@ -25,7 +25,7 @@ class SocialAccountController extends Controller
  
         return Inertia::render('Settings/SocialAccounts', [
             'accounts' => $accounts,
-            'facebook_login_url' => FacebookService::getLoginUrl(),
+            'facebook_login_url' => route('auth.facebook'),
             'available_platforms' => ['facebook', 'instagram', 'youtube', 'twitter', 'linkedin'],
         ]);
     }
