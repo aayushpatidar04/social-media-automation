@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\SocialAccount;
 use App\Models\Organization;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 class FacebookAuthController extends Controller
@@ -99,8 +100,8 @@ class FacebookAuthController extends Controller
 
                 if (!$existing) {
                     SocialAccount::create([
-                        'organization_id' => auth()->user()->organization_id,
-                        'user_id' => auth()->id(),
+                        'organization_id' => Auth::user()->organization_id,
+                        'user_id' => Auth::id(),
                         'platform' => 'facebook',
                         'platform_account_id' => $page['id'],
                         'platform_account_name' => $page['name'],

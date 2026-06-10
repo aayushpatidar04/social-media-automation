@@ -69,6 +69,7 @@
 <script setup>
 import { ref } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import axios from 'axios'
 
 const props = defineProps({
     accounts: Array,
@@ -78,15 +79,23 @@ const props = defineProps({
 
 const facebookLoginUrl = ref(props.facebook_login_url || '#')
 
-const syncNow = (accountId) => {
-    console.log('Syncing account:', accountId)
-    // Call API to sync
+const syncNow = async (accountId) => {
+    try {
+        const response = await axios.post(`/social-accounts/${accountId}/sync`)
+        console.log(response.data.message) // "Sync job queued"
+    } catch (error) {
+        console.error('Sync failed:', error.response?.data || error.message)
+    }
 }
 
-const disconnect = (accountId) => {
+const disconnect = async (accountId) => {
     if (confirm('Are you sure you want to disconnect this account?')) {
-        console.log('Disconnecting account:', accountId)
-        // Call API to disconnect
+        try {
+            const response = await axios.post(`/social-accounts/${accountId}/disconnect`)
+            console.log(response.data.message) // "Account disconnected"
+        } catch (error) {
+            console.error('Disconnect failed:', error.response?.data || error.message)
+        }
     }
 }
 
