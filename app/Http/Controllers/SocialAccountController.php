@@ -8,13 +8,14 @@ use App\Models\SocialAccount;
 use App\Jobs\SyncFacebookComments;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 class SocialAccountController extends Controller
 {
     public function index()
     {
-        $organization = auth()->user()->organization;
+        $organization = Auth::user()->organization;
         
         $accounts = $organization->socialAccounts()
             ->with('user')
@@ -34,7 +35,7 @@ class SocialAccountController extends Controller
     public function sync(Request $request, SocialAccount $account)
     {
         // Check authorization
-        if ($account->organization_id !== auth()->user()->organization_id) {
+        if ($account->organization_id !== Auth::user()->organization_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -62,7 +63,7 @@ class SocialAccountController extends Controller
     public function disconnect(Request $request, SocialAccount $account)
     {
         // Check authorization
-        if ($account->organization_id !== auth()->user()->organization_id) {
+        if ($account->organization_id !== Auth::user()->organization_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -92,7 +93,7 @@ class SocialAccountController extends Controller
      */
     public function reconnect(Request $request, SocialAccount $account)
     {
-        if ($account->organization_id !== auth()->user()->organization_id) {
+        if ($account->organization_id !== Auth::user()->organization_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -116,7 +117,7 @@ class SocialAccountController extends Controller
      */
     public function test(Request $request, SocialAccount $account)
     {
-        if ($account->organization_id !== auth()->user()->organization_id) {
+        if ($account->organization_id !== Auth::user()->organization_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

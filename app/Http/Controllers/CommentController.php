@@ -9,7 +9,9 @@ use App\Models\AiConversation;
 use App\Services\FacebookService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+
 
 class CommentController extends Controller
 {
@@ -18,7 +20,7 @@ class CommentController extends Controller
      */
     public function inbox(Request $request)
     {
-        $organization = auth()->user()->organization;
+        $organization = Auth::user()->organization;
 
         $query = $organization->socialComments()
             ->with(['socialAccount', 'socialPost'])
@@ -62,7 +64,7 @@ class CommentController extends Controller
      */
     public function filter(Request $request)
     {
-        $organization = auth()->user()->organization;
+        $organization = Auth::user()->organization;
 
         $query = $organization->socialComments()
             ->with(['socialAccount', 'socialPost'])
@@ -99,7 +101,7 @@ class CommentController extends Controller
      */
     public function show(SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -120,7 +122,7 @@ class CommentController extends Controller
      */
     public function sendReply(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -135,7 +137,7 @@ class CommentController extends Controller
             $aiConversation = AiConversation::create([
                 'organization_id' => $comment->organization_id,
                 'social_comment_id' => $comment->id,
-                'user_id' => auth()->id(),
+                'user_id' => Auth::id(),
                 'ai_response' => $validated['message'],
                 'response_status' => 'manual',
                 'confidence' => 1.0,
@@ -167,7 +169,7 @@ class CommentController extends Controller
      */
     public function approveAIResponse(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -193,7 +195,7 @@ class CommentController extends Controller
             // Update conversation
             $aiConversation->update([
                 'response_status' => 'approved',
-                'approved_by_user_id' => auth()->id(),
+                'approved_by_user_id' => Auth::id(),
                 'approved_at' => now(),
             ]);
 
@@ -222,7 +224,7 @@ class CommentController extends Controller
      */
     public function rejectAIResponse(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -242,7 +244,7 @@ class CommentController extends Controller
             $aiConversation->update([
                 'response_status' => 'rejected',
                 'rejection_reason' => $validated['reason'] ?? null,
-                'rejected_by_user_id' => auth()->id(),
+                'rejected_by_user_id' => Auth::id(),
                 'rejected_at' => now(),
             ]);
 
@@ -264,7 +266,7 @@ class CommentController extends Controller
      */
     public function markAsResponded(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -291,7 +293,7 @@ class CommentController extends Controller
      */
     public function markAsReviewed(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 

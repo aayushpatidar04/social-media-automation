@@ -9,6 +9,7 @@ use App\Http\Controllers\LeadController;
 use App\Http\Controllers\KnowledgeBaseController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -158,10 +159,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::prefix('settings/team')->name('settings.team.')->group(function () {
         Route::get('/', function () {
-            $organization = auth()->user()->organization;
+            $organization = Auth::user()->organization;
             return Inertia::render('Settings/Team', [
                 'teamMembers' => $organization->users()->get(),
-                'currentUserId' => auth()->id(),
+                'currentUserId' => Auth::id(),
             ]);
         })->name('index');
 
@@ -180,7 +181,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::prefix('settings/organization')->name('settings.organization.')->group(function () {
         Route::get('/', function () {
-            $organization = auth()->user()->organization;
+            $organization = Auth::user()->organization;
             return Inertia::render('Settings/Organization', [
                 'organization' => $organization,
             ]);

@@ -36,7 +36,9 @@ class FacebookService
 
         session(['facebook_oauth_state' => $state]);
 
-        return "https://www.facebook.com/{$this->graphVersion}/dialog/oauth?" .
+        $service = new self();
+
+        return "https://www.facebook.com/{$service->graphVersion}/dialog/oauth?" .
             "client_id={$appId}" .
             "&redirect_uri=" . urlencode($redirectUri) .
             "&scope={$scope}" .
@@ -190,13 +192,15 @@ class FacebookService
      */
     private function getPagePosts(SocialAccount $account): array
     {
+        Log::info('aayush-patidar');
         $url = "https://graph.facebook.com/{$this->graphVersion}/" . $account->platform_account_id . "/posts?" .
             "fields=id,message,created_time,type,link&" .
             "limit=100&" .
             "access_token=" . $account->access_token;
-
+        
         $response = json_decode(file_get_contents($url), true);
-
+        Log::info($response);
+            
         if (isset($response['error'])) {
             Log::error('Error fetching posts: ' . $response['error']['message']);
             return [];
