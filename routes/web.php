@@ -66,8 +66,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Social Accounts
         Route::prefix('social-accounts')->group(function () {
             Route::get('/', [SocialAccountController::class, 'index'])->name('settings.social-accounts');
-            Route::get('/facebook/callback', [SocialAccountController::class, 'handleFacebookCallback'])
-                ->name('auth.facebook.callback');
             Route::post('/{account}/disconnect', [SocialAccountController::class, 'disconnect'])
                 ->name('social-accounts.disconnect');
             Route::post('/{account}/sync', [SocialAccountController::class, 'syncNow'])

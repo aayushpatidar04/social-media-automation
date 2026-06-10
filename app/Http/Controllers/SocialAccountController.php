@@ -30,25 +30,6 @@ class SocialAccountController extends Controller
         ]);
     }
  
-    public function handleFacebookCallback(Request $request)
-    {
-        $request->validate(['code' => 'required']);
- 
-        try {
-            $account = FacebookService::handleCallback(
-                $request->code,
-                Auth::user()->organization_id,
-                Auth::id()
-            );
- 
-            return Redirect::route('settings.social-accounts')
-                ->with('success', 'Facebook account connected successfully!');
-        } catch (\Exception $e) {
-            return Redirect::route('settings.social-accounts')
-                ->with('error', 'Failed to connect Facebook account: ' . $e->getMessage());
-        }
-    }
- 
     public function disconnect(SocialAccount $account)
     {
         $this->authorize('delete', $account);
