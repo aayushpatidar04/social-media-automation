@@ -6,7 +6,7 @@
                 <h1 class="text-4xl font-bold text-white mb-2">Analytics Dashboard</h1>
                 <p class="text-slate-400">Real-time social media insights powered by AI</p>
             </div>
-    
+
             <!-- Loading State -->
             <div v-if="loading" class="text-center py-12">
                 <div class="inline-block">
@@ -14,7 +14,7 @@
                 </div>
                 <p class="text-slate-400 mt-4">Loading analytics...</p>
             </div>
-    
+
             <div v-else>
                 <!-- Summary Cards -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
@@ -23,38 +23,38 @@
                         <p class="text-slate-400 text-sm font-medium mb-1">Total Comments</p>
                         <p class="text-2xl font-bold text-white">{{ metrics.summary.total_comments }}</p>
                     </div>
-    
+
                     <div class="dashboard-card">
                         <div class="text-3xl mb-2">📬</div>
                         <p class="text-slate-400 text-sm font-medium mb-1">New Comments</p>
                         <p class="text-2xl font-bold text-yellow-400">{{ metrics.summary.new_comments }}</p>
                     </div>
-    
+
                     <div class="dashboard-card">
                         <div class="text-3xl mb-2">✅</div>
                         <p class="text-slate-400 text-sm font-medium mb-1">Response Rate</p>
                         <p class="text-2xl font-bold text-green-400">{{ metrics.summary.response_rate }}%</p>
                     </div>
-    
+
                     <div class="dashboard-card">
                         <div class="text-3xl mb-2">🎯</div>
                         <p class="text-slate-400 text-sm font-medium mb-1">Total Leads</p>
                         <p class="text-2xl font-bold text-blue-400">{{ metrics.summary.total_leads }}</p>
                     </div>
-    
+
                     <div class="dashboard-card">
                         <div class="text-3xl mb-2">⭐</div>
                         <p class="text-slate-400 text-sm font-medium mb-1">Qualified Leads</p>
                         <p class="text-2xl font-bold text-emerald-400">{{ metrics.summary.qualified_leads }}</p>
                     </div>
-    
+
                     <div class="dashboard-card">
                         <div class="text-3xl mb-2">😊</div>
                         <p class="text-slate-400 text-sm font-medium mb-1">Avg Sentiment</p>
                         <p class="text-2xl font-bold text-purple-400">{{ metrics.summary.avg_sentiment_score }}/100</p>
                     </div>
                 </div>
-    
+
                 <!-- Charts Row -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                     <!-- Sentiment Chart -->
@@ -73,7 +73,7 @@
                             </div>
                         </div>
                     </div>
-    
+
                     <!-- Platform Breakdown -->
                     <div class="dashboard-card">
                         <h3 class="text-lg font-bold text-white mb-4">By Platform</h3>
@@ -90,7 +90,7 @@
                             </div>
                         </div>
                     </div>
-    
+
                     <!-- Lead Metrics -->
                     <div class="dashboard-card">
                         <h3 class="text-lg font-bold text-white mb-4">Lead Status</h3>
@@ -102,13 +102,14 @@
                                 </div>
                                 <div class="w-full bg-slate-700 rounded-full h-2">
                                     <div class="h-2 rounded-full bg-emerald-500"
-                                        :style="{ width: (count / metrics.lead_metrics.total_leads * 100) + '%' }"></div>
+                                        :style="{ width: (count / metrics.lead_metrics.total_leads * 100) + '%' }">
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-    
+
                 <!-- Activity Timeline -->
                 <div class="dashboard-card mb-6">
                     <h3 class="text-lg font-bold text-white mb-4">Activity (24 Hours)</h3>
@@ -119,25 +120,26 @@
                                 :style="{ height: (item.count / maxActivityCount * 100) + '%', minHeight: '20px' }">
                             </div>
                             <span class="text-xs text-slate-500 mt-2 text-center">{{ item.time }}</span>
-                            <span class="text-xs text-slate-400 opacity-0 group-hover:opacity-100">{{ item.count }}</span>
+                            <span class="text-xs text-slate-400 opacity-0 group-hover:opacity-100">{{ item.count
+                                }}</span>
                         </div>
                     </div>
                 </div>
-    
+
                 <!-- Recent Comments -->
                 <div class="dashboard-card">
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-lg font-bold text-white">Recent Comments</h3>
                         <a href="/inbox" class="text-sm text-blue-400 hover:text-blue-300">View All →</a>
                     </div>
-    
+
                     <div v-if="recentComments.length === 0" class="text-center py-8">
                         <p class="text-slate-400">No comments yet. Connect your first social account to get started!</p>
                         <a href="/settings/social-accounts" class="text-blue-400 hover:text-blue-300 text-sm mt-2">
                             Connect Account
                         </a>
                     </div>
-    
+
                     <div v-else class="space-y-4">
                         <div v-for="comment in recentComments" :key="comment.id"
                             class="p-4 border border-slate-700 rounded-lg hover:border-slate-600 hover:bg-slate-700/30 transition-all cursor-pointer"
@@ -160,7 +162,8 @@
                             </div>
                             <p class="text-slate-300 text-sm mb-3 line-clamp-2">{{ comment.content }}</p>
                             <div class="flex justify-between items-center text-xs text-slate-500">
-                                <span>Lead Score: <span class="text-white font-bold">{{ comment.lead_score }}</span></span>
+                                <span>Lead Score: <span class="text-white font-bold">{{ comment.lead_score
+                                        }}</span></span>
                                 <span>{{ formatDate(comment.commented_at) }}</span>
                             </div>
                         </div>
@@ -267,7 +270,8 @@ const formatDate = (date) => {
 }
 
 .line-clamp-2 {
-    @layer overflow-hidden text-overflow-ellipsis;
+    overflow: hidden;
+    text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
