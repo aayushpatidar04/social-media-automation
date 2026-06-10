@@ -1,0 +1,1 @@
+import{D as e,M as t,T as n,g as r,k as i,n as a}from"./app-BXX8-J75.js";var o={__name:`Link`,props:{href:{type:String,required:!0},as:{type:String,default:`a`}},setup(o){return(s,c)=>(n(),r(t(a),{href:o.href,as:o.as,class:`text-blue-400 hover:text-blue-300 transition-colors`},{default:i(()=>[e(s.$slots,`default`)]),_:3},8,[`href`,`as`]))}};export{o as t};
