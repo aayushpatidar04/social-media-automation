@@ -1,133 +1,31 @@
 <?php
 
-// routes/web.php
-
-use App\Http\Controllers\AnalyticsController;
-use App\Http\Controllers\Auth\AuthenticatedSessionController;
-use App\Http\Controllers\CommentController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\FacebookAuthController;
-use App\Http\Controllers\KnowledgeBaseController;
-use App\Http\Controllers\LeadController;
-use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\CommentController;
+use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\SocialAccountController;
+use App\Http\Controllers\FacebookAuthController;
+use App\Http\Controllers\LeadController;
+use App\Http\Controllers\KnowledgeBaseController;
+use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
-// Public routes
+// ============================================
+// PUBLIC ROUTES (No Auth Required)
+// ============================================
+
 Route::get('/', function () {
     return Inertia::render('Welcome');
 })->name('home');
 
-// Authenticated routes
-Route::middleware(['auth', 'verified'])->group(function () {
-
-    // Dashboard
-    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
-
-    // Social Inbox
-    Route::prefix('inbox')->group(function () {
-        Route::get('/', [CommentController::class, 'inbox'])->name('inbox');
-        Route::get('/filter', [CommentController::class, 'filter'])->name('comments.filter');
-        Route::get('/{comment}', [CommentController::class, 'show'])->name('comments.show');
-        Route::post('/{comment}/approve-response', [CommentController::class, 'approveAIResponse'])
-            ->name('comments.approve-response');
-        Route::post('/{comment}/reject-response', [CommentController::class, 'rejectAIResponse'])
-            ->name('comments.reject-response');
-        Route::post('/{comment}/mark-responded', [CommentController::class, 'markAsResponded'])
-            ->name('comments.mark-responded');
-    });
-
-    // Analytics
-    Route::prefix('analytics')->group(function () {
-        Route::get('/', [AnalyticsController::class, 'dashboard'])->name('analytics.dashboard');
-        Route::get('/metrics/{metricType}', [AnalyticsController::class, 'getMetrics'])
-            ->name('analytics.metrics');
-        Route::post('/export', [AnalyticsController::class, 'exportReport'])
-            ->name('analytics.export');
-    });
-
-    // Leads Management
-    Route::prefix('leads')->group(function () {
-        Route::get('/', [LeadController::class, 'index'])->name('leads.index');
-        Route::get('/{lead}', [LeadController::class, 'show'])->name('leads.show');
-        Route::post('/{lead}/assign', [LeadController::class, 'assign'])->name('leads.assign');
-        Route::post('/{lead}/update-status', [LeadController::class, 'updateStatus'])
-            ->name('leads.update-status');
-        Route::post('/{lead}/contact', [LeadController::class, 'logContact'])
-            ->name('leads.log-contact');
-    });
-
-    // Settings
-    Route::prefix('settings')->group(function () {
-        // Social Accounts
-        Route::prefix('social-accounts')->group(function () {
-            Route::get('/', [SocialAccountController::class, 'index'])->name('settings.social-accounts');
-            Route::post('/{account}/disconnect', [SocialAccountController::class, 'disconnect'])
-                ->name('social-accounts.disconnect');
-            Route::post('/{account}/sync', [SocialAccountController::class, 'syncNow'])
-                ->name('social-accounts.sync');
-        });
-
-        // Knowledge Base
-        Route::prefix('knowledge-base')->group(function () {
-            Route::get('/', [KnowledgeBaseController::class, 'index'])
-                ->name('settings.knowledge-base');
-            Route::post('/upload', [KnowledgeBaseController::class, 'upload'])
-                ->name('knowledge-base.upload');
-            Route::delete('/{source}', [KnowledgeBaseController::class, 'delete'])
-                ->name('knowledge-base.delete');
-        });
-
-        // Team Settings
-        Route::get('/team', function () {
-            return Inertia::render('Settings/Team');
-        })->name('settings.team');
-
-        // Organization Settings
-        Route::get('/organization', function () {
-            return Inertia::render('Settings/Organization');
-        })->name('settings.organization');
-
-        // API Settings
-        Route::get('/api', function () {
-            return Inertia::render('Settings/API');
-        })->name('settings.api');
-    });
-
-    // Profile
-    Route::prefix('profile')->group(function () {
-        Route::get('/', function () {
-            return Inertia::render('Profile/Edit');
-        })->name('profile.edit');
-        Route::post('/', [ProfileController::class, 'update'])
-            ->name('profile.update');
-    });
-});
-
-// Webhook routes (should be protected with middleware)
-Route::middleware(['webhook.verify'])->group(function () {
-    Route::post('/webhooks/facebook', function (Illuminate\Http\Request $request) {
-        \App\Services\FacebookService::handleWebhookEvent($request->all());
-        return response()->json(['status' => 'ok']);
-    })->name('webhooks.facebook');
-
-    Route::post('/webhooks/instagram', function (Illuminate\Http\Request $request) {
-        \App\Services\FacebookService::handleWebhookEvent($request->all());
-        return response()->json(['status' => 'ok']);
-    })->name('webhooks.instagram');
-});
-
-// Health check
 Route::get('/health', function () {
-    return response()->json(['status' => 'ok']);
+    return response()->json(['status' => 'ok', 'time' => now()]);
 });
 
 // ============================================
-// FACEBOOK OAUTH ROUTES
+// FACEBOOK OAUTH ROUTES (No Auth Required)
 // ============================================
 
 Route::get('/auth/facebook', [FacebookAuthController::class, 'login'])
@@ -136,8 +34,277 @@ Route::get('/auth/facebook', [FacebookAuthController::class, 'login'])
 Route::get('/auth/facebook/callback', [FacebookAuthController::class, 'callback'])
     ->name('auth.facebook.callback');
 
-Route::middleware('auth')->group(function () {
-    Route::post('/facebook/test', [FacebookAuthController::class, 'test'])
-        ->name('facebook.test');
+// ============================================
+// AUTHENTICATED ROUTES (Requires Login)
+// ============================================
+
+Route::middleware(['auth', 'verified'])->group(function () {
+
+    // ============================================
+    // DASHBOARD
+    // ============================================
+
+    Route::get('/dashboard', [DashboardController::class, 'index'])
+        ->name('dashboard');
+
+    // ============================================
+    // SOCIAL INBOX & COMMENTS
+    // ============================================
+
+    Route::prefix('inbox')->name('comments.')->group(function () {
+        Route::get('/', [CommentController::class, 'inbox'])
+            ->name('index');
+
+        Route::get('/filter', [CommentController::class, 'filter'])
+            ->name('filter');
+
+        Route::get('/{comment}', [CommentController::class, 'show'])
+            ->name('show');
+
+        Route::post('/{comment}/reply', [CommentController::class, 'sendReply'])
+            ->name('reply');
+
+        Route::post('/{comment}/approve', [CommentController::class, 'approveAIResponse'])
+            ->name('approve');
+
+        Route::post('/{comment}/reject', [CommentController::class, 'rejectAIResponse'])
+            ->name('reject');
+
+        Route::post('/{comment}/mark-responded', [CommentController::class, 'markAsResponded'])
+            ->name('mark-responded');
+
+        Route::post('/{comment}/mark-reviewed', [CommentController::class, 'markAsReviewed'])
+            ->name('mark-reviewed');
+    });
+
+    // ============================================
+    // ANALYTICS
+    // ============================================
+
+    Route::prefix('analytics')->name('analytics.')->group(function () {
+        Route::get('/', [AnalyticsController::class, 'dashboard'])
+            ->name('dashboard');
+
+        Route::get('/metrics/{metricType}', [AnalyticsController::class, 'getMetrics'])
+            ->name('metrics');
+
+        Route::post('/export', [AnalyticsController::class, 'exportReport'])
+            ->name('export');
+    });
+
+    // ============================================
+    // LEADS MANAGEMENT
+    // ============================================
+
+    Route::prefix('leads')->name('leads.')->group(function () {
+        Route::get('/', [LeadController::class, 'index'])
+            ->name('index');
+
+        Route::get('/{lead}', [LeadController::class, 'show'])
+            ->name('show');
+
+        Route::post('/{lead}/assign', [LeadController::class, 'assign'])
+            ->name('assign');
+
+        Route::post('/{lead}/update-status', [LeadController::class, 'updateStatus'])
+            ->name('update-status');
+
+        Route::post('/{lead}/contact', [LeadController::class, 'logContact'])
+            ->name('log-contact');
+
+        Route::get('/filter', [LeadController::class, 'filter'])
+            ->name('filter');
+    });
+
+    // ============================================
+    // PROFILE SETTINGS
+    // ============================================
+
+    Route::prefix('profile')->name('profile.')->group(function () {
+        Route::get('/', [ProfileController::class, 'edit'])
+            ->name('edit');
+
+        Route::patch('/', [ProfileController::class, 'update'])
+            ->name('update');
+
+        Route::delete('/', [ProfileController::class, 'destroy'])
+            ->name('destroy');
+    });
+
+    // ============================================
+    // SETTINGS - SOCIAL ACCOUNTS
+    // ============================================
+
+    Route::prefix('settings/social-accounts')->name('settings.social-accounts.')->group(function () {
+        Route::get('/', [SocialAccountController::class, 'index'])
+            ->name('index');
+
+        Route::post('/{account}/sync', [SocialAccountController::class, 'sync'])
+            ->name('sync');
+
+        Route::post('/{account}/disconnect', [SocialAccountController::class, 'disconnect'])
+            ->name('disconnect');
+
+        Route::post('/{account}/reconnect', [SocialAccountController::class, 'reconnect'])
+            ->name('reconnect');
+
+        Route::post('/{account}/test', [SocialAccountController::class, 'test'])
+            ->name('test');
+    });
+
+    // ============================================
+    // SETTINGS - TEAM
+    // ============================================
+
+    Route::prefix('settings/team')->name('settings.team.')->group(function () {
+        Route::get('/', function () {
+            $organization = auth()->user()->organization;
+            return Inertia::render('Settings/Team', [
+                'teamMembers' => $organization->users()->get(),
+                'currentUserId' => auth()->id(),
+            ]);
+        })->name('index');
+
+        Route::post('/invite', function () {
+            // Invite team member logic here
+        })->name('invite');
+
+        Route::delete('/{user}', function () {
+            // Remove team member logic here
+        })->name('remove');
+    });
+
+    // ============================================
+    // SETTINGS - ORGANIZATION
+    // ============================================
+
+    Route::prefix('settings/organization')->name('settings.organization.')->group(function () {
+        Route::get('/', function () {
+            $organization = auth()->user()->organization;
+            return Inertia::render('Settings/Organization', [
+                'organization' => $organization,
+            ]);
+        })->name('index');
+
+        Route::patch('/', function () {
+            // Update organization logic here
+        })->name('update');
+    });
+
+    // ============================================
+    // SETTINGS - API
+    // ============================================
+
+    Route::prefix('settings/api')->name('settings.api.')->group(function () {
+        Route::get('/', function () {
+            return Inertia::render('Settings/API');
+        })->name('index');
+
+        Route::post('/keys/generate', function () {
+            // Generate API key logic here
+        })->name('generate-key');
+
+        Route::delete('/keys/{key}', function () {
+            // Revoke API key logic here
+        })->name('revoke-key');
+    });
+
+    // ============================================
+    // SETTINGS - KNOWLEDGE BASE
+    // ============================================
+
+    Route::prefix('settings/knowledge-base')->name('settings.knowledge-base.')->group(function () {
+        Route::get('/', [KnowledgeBaseController::class, 'index'])
+            ->name('index');
+
+        Route::post('/upload', [KnowledgeBaseController::class, 'upload'])
+            ->name('upload');
+
+        Route::delete('/{source}', [KnowledgeBaseController::class, 'delete'])
+            ->name('delete');
+    });
+
 });
-require __DIR__ . '/auth.php';
+
+// ============================================
+// WEBHOOK ROUTES (No Auth Required)
+// ============================================
+
+Route::post('/webhooks/facebook', function (\Illuminate\Http\Request $request) {
+    // Verify webhook signature
+    $hubSignature = $request->header('X-Hub-Signature', '');
+    $body = $request->getContent();
+
+    if (!$hubSignature || !verifyFacebookSignature($hubSignature, $body)) {
+        return response('Unauthorized', 401);
+    }
+
+    // Handle webhook event
+    \App\Services\FacebookService::handleWebhookEvent($request->all());
+
+    return response()->json(['status' => 'ok']);
+})->name('webhooks.facebook');
+
+Route::post('/webhooks/instagram', function (\Illuminate\Http\Request $request) {
+    // Verify webhook signature
+    $hubSignature = $request->header('X-Hub-Signature', '');
+    $body = $request->getContent();
+
+    if (!$hubSignature || !verifyFacebookSignature($hubSignature, $body)) {
+        return response('Unauthorized', 401);
+    }
+
+    // Handle webhook event
+    \App\Services\FacebookService::handleWebhookEvent($request->all());
+
+    return response()->json(['status' => 'ok']);
+})->name('webhooks.instagram');
+
+// Webhook verification endpoint (GET)
+Route::get('/webhooks/facebook', function (\Illuminate\Http\Request $request) {
+    $mode = $request->query('hub_mode');
+    $token = $request->query('hub_verify_token');
+    $challenge = $request->query('hub_challenge');
+
+    if ($mode === 'subscribe' && $token === env('FACEBOOK_VERIFY_TOKEN')) {
+        return $challenge;
+    }
+
+    return response('Forbidden', 403);
+})->name('webhooks.facebook.verify');
+
+Route::get('/webhooks/instagram', function (\Illuminate\Http\Request $request) {
+    $mode = $request->query('hub_mode');
+    $token = $request->query('hub_verify_token');
+    $challenge = $request->query('hub_challenge');
+
+    if ($mode === 'subscribe' && $token === env('FACEBOOK_VERIFY_TOKEN')) {
+        return $challenge;
+    }
+
+    return response('Forbidden', 403);
+})->name('webhooks.instagram.verify');
+
+// ============================================
+// 404 & FALLBACK
+// ============================================
+
+Route::fallback(function () {
+    return Inertia::render('404');
+});
+
+// ============================================
+// HELPER FUNCTION
+// ============================================
+
+if (!function_exists('verifyFacebookSignature')) {
+    function verifyFacebookSignature(string $hubSignature, string $body): bool
+    {
+        $appSecret = env('FACEBOOK_APP_SECRET');
+        $expectedSignature = 'sha1=' . hash_hmac('sha1', $body, $appSecret);
+
+        return hash_equals($expectedSignature, $hubSignature);
+    }
+}
+
+require __DIR__.'/auth.php';

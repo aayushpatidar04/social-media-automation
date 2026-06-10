@@ -1,386 +1,366 @@
 <?php
 
-// app/Services/FacebookService.php
+// app/Services/FacebookService.php - COMPLETE VERSION
 
 namespace App\Services;
 
-use Facebook\Facebook;
-use Facebook\Exceptions\FacebookResponseException;
 use App\Models\SocialAccount;
-use App\Models\SocialPost;
 use App\Models\SocialComment;
+use App\Models\SocialPost;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 
 class FacebookService
 {
-    private Facebook $fb;
-    private SocialAccount $account;
+    private string $graphVersion;
 
-    public function __construct(SocialAccount $account = null)
+    public function __construct()
     {
-        $this->fb = new Facebook([
-            'app_id' => env('FACEBOOK_APP_ID'),
-            'app_secret' => env('FACEBOOK_APP_SECRET'),
-            'default_graph_version' => 'v25.0',
-        ]);
-
-        if ($account) {
-            $this->account = $account;
-            $this->fb->setDefaultAccessToken($account->access_token);
-        }
+        $this->graphVersion = env('FACEBOOK_GRAPH_VERSION', 'v25.0');
     }
 
     /**
-     * Generate OAuth login URL
+     * Get Facebook login URL for OAuth
      */
     public static function getLoginUrl(): string
     {
-        $fb = new Facebook([
-            'app_id' => env('FACEBOOK_APP_ID'),
-            'app_secret' => env('FACEBOOK_APP_SECRET'),
-            'default_graph_version' => 'v25.0',
-        ]);
+        $appId = env('FACEBOOK_APP_ID');
+        $redirectUri = env('FACEBOOK_REDIRECT_URI');
 
-        $helper = $fb->getRedirectLoginHelper();
-        $permissions = [
-            'pages_read_user_content',
-            'pages_read_engagement',
-            'instagram_basic',
-            'pages_show_list',
-            'business_management',
-            'instagram_manage_comments',
-        ];
+        if (!$appId || !$redirectUri) {
+            throw new \Exception('Facebook credentials not configured');
+        }
 
-        return $helper->getLoginUrl(
-            env('APP_URL') . '/auth/facebook/callback',
-            $permissions
-        );
+        $scope = 'pages_read_user_content,pages_manage_metadata,pages_read_engagement,instagram_basic';
+        $state = bin2hex(random_bytes(16));
+
+        session(['facebook_oauth_state' => $state]);
+
+        return "https://www.facebook.com/{$this->graphVersion}/dialog/oauth?" .
+            "client_id={$appId}" .
+            "&redirect_uri=" . urlencode($redirectUri) .
+            "&scope={$scope}" .
+            "&state={$state}" .
+            "&display=popup";
     }
 
     /**
-     * Handle OAuth callback and save access token
+     * Handle OAuth callback
      */
-    public static function handleCallback(string $accessTokenString, $organizationId, $userId): SocialAccount
+    public static function handleCallback(string $code, int $organizationId, int $userId): array
     {
-        $fb = new Facebook([
-            'app_id' => env('FACEBOOK_APP_ID'),
-            'app_secret' => env('FACEBOOK_APP_SECRET'),
-            'default_graph_version' => 'v25.0',
-        ]);
+        $service = new self();
+        return $service->exchangeCodeForAccounts($code, $organizationId, $userId);
+    }
 
-        $fb->setDefaultAccessToken($accessTokenString);
+    /**
+     * Exchange authorization code for accounts
+     */
+    private function exchangeCodeForAccounts(string $code, int $organizationId, int $userId): array
+    {
+        $appId = env('FACEBOOK_APP_ID');
+        $appSecret = env('FACEBOOK_APP_SECRET');
+        $redirectUri = env('FACEBOOK_REDIRECT_URI');
 
-        try {
-            // Get user's pages
-            $response = $fb->get('/me/accounts?fields=id,name,picture,access_token', $accessTokenString);
-            $pageData = $response->getDecodedBody();
+        // Get access token
+        $tokenUrl = "https://graph.facebook.com/{$this->graphVersion}/oauth/access_token?" .
+            "client_id={$appId}" .
+            "&client_secret={$appSecret}" .
+            "&redirect_uri=" . urlencode($redirectUri) .
+            "&code={$code}";
 
-            $savedAccounts = [];
+        $tokenResponse = json_decode(file_get_contents($tokenUrl), true);
 
-            foreach ($pageData['data'] as $page) {
-                $account = SocialAccount::create([
+        if (isset($tokenResponse['error'])) {
+            throw new \Exception('Facebook error: ' . $tokenResponse['error']['message']);
+        }
+
+        $accessToken = $tokenResponse['access_token'];
+
+        // Get user's pages
+        $pagesUrl = "https://graph.facebook.com/{$this->graphVersion}/me/accounts?" .
+            "fields=id,name,picture,access_token&" .
+            "access_token={$accessToken}";
+
+        $pagesResponse = json_decode(file_get_contents($pagesUrl), true);
+
+        if (isset($pagesResponse['error'])) {
+            throw new \Exception('Failed to get pages: ' . $pagesResponse['error']['message']);
+        }
+
+        $accounts = [];
+        foreach ($pagesResponse['data'] ?? [] as $page) {
+            $account = SocialAccount::updateOrCreate(
+                [
+                    'platform_account_id' => $page['id'],
+                    'platform' => 'facebook',
+                ],
+                [
                     'organization_id' => $organizationId,
                     'user_id' => $userId,
-                    'platform' => 'facebook',
-                    'platform_account_id' => $page['id'],
                     'platform_account_name' => $page['name'],
+                    'platform_account_handle' => $page['name'],
                     'access_token' => $page['access_token'],
-                    'profile_picture_url' => $page['picture']['data']['url'] ?? null,
                     'status' => 'connected',
                     'is_active' => true,
-                ]);
+                ]
+            );
+            $accounts[] = $account;
+        }
 
-                $savedAccounts[] = $account;
+        return $accounts;
+    }
+
+    /**
+     * Sync all posts and comments from a Facebook page
+     */
+    public function syncPageComments(SocialAccount $account): int
+    {
+        try {
+            Log::info('Starting sync for account: ' . $account->platform_account_name);
+
+            $totalComments = 0;
+
+            // Get all posts from the page
+            $posts = $this->getPagePosts($account);
+            Log::info('Found ' . count($posts) . ' posts');
+
+            foreach ($posts as $post) {
+                // Store post
+                $storedPost = SocialPost::updateOrCreate(
+                    [
+                        'platform_post_id' => $post['id'],
+                        'platform' => 'facebook',
+                    ],
+                    [
+                        'organization_id' => $account->organization_id,
+                        'social_account_id' => $account->id,
+                        'content' => $post['message'] ?? '',
+                        'posted_at' => $post['created_time'] ?? now(),
+                    ]
+                );
+
+                // Get comments on this post
+                $comments = $this->getPostComments($account, $post['id']);
+                Log::info('Found ' . count($comments) . ' comments on post ' . $post['id']);
+
+                foreach ($comments as $comment) {
+                    $storedComment = SocialComment::updateOrCreate(
+                        [
+                            'platform_comment_id' => $comment['id'],
+                            'platform' => 'facebook',
+                        ],
+                        [
+                            'organization_id' => $account->organization_id,
+                            'social_account_id' => $account->id,
+                            'social_post_id' => $storedPost->id,
+                            'author_name' => $comment['from']['name'] ?? 'Unknown',
+                            'author_id' => $comment['from']['id'] ?? null,
+                            'content' => $comment['message'] ?? '',
+                            'commented_at' => $comment['created_time'] ?? now(),
+                            'status' => 'new',
+                            'sentiment' => null,
+                            'sentiment_score' => null,
+                            'intent' => null,
+                            'lead_score' => null,
+                        ]
+                    );
+
+                    $totalComments++;
+
+                    // Dispatch AI analysis job
+                    \App\Jobs\AnalyzeCommentWithAI::dispatch($storedComment);
+                }
             }
 
-            return $savedAccounts[0] ?? null;
-        } catch (FacebookResponseException $e) {
-            Log::error('Facebook OAuth Error: ' . $e->getMessage());
+            // Update last sync time
+            $account->update(['last_synced_at' => now()]);
+
+            Log::info('Sync completed. Total comments: ' . $totalComments);
+            return $totalComments;
+
+        } catch (\Exception $e) {
+            Log::error('Sync error for account ' . $account->id . ': ' . $e->getMessage());
             throw $e;
         }
     }
 
     /**
-     * Get Facebook pages for a user
+     * Get all posts from a Facebook page
      */
-    public function getPages(): array
+    private function getPagePosts(SocialAccount $account): array
     {
-        try {
-            $response = $this->fb->get('/me/accounts?fields=id,name,picture', $this->account->access_token);
-            return $response->getDecodedBody()['data'] ?? [];
-        } catch (\Exception $e) {
-            Log::error('Get Pages Error: ' . $e->getMessage());
+        $url = "https://graph.facebook.com/{$this->graphVersion}/" . $account->platform_account_id . "/posts?" .
+            "fields=id,message,created_time,type,link&" .
+            "limit=100&" .
+            "access_token=" . $account->access_token;
+
+        $response = json_decode(file_get_contents($url), true);
+
+        if (isset($response['error'])) {
+            Log::error('Error fetching posts: ' . $response['error']['message']);
             return [];
         }
+
+        return $response['data'] ?? [];
     }
 
     /**
-     * Get connected Instagram accounts
+     * Get all comments on a post
      */
-    public function getInstagramAccounts(): array
+    private function getPostComments(SocialAccount $account, string $postId): array
     {
-        try {
-            $response = $this->fb->get(
-                '/' . $this->account->platform_account_id . '?fields=instagram_business_account',
-                $this->account->access_token
-            );
+        $url = "https://graph.facebook.com/{$this->graphVersion}/{$postId}/comments?" .
+            "fields=id,message,created_time,from,type&" .
+            "summary=total_count&" .
+            "limit=100&" .
+            "access_token=" . $account->access_token;
 
-            $data = $response->getDecodedBody();
-            if (isset($data['instagram_business_account']['id'])) {
-                return [$data['instagram_business_account']['id']];
+        try {
+            $response = json_decode(file_get_contents($url), true);
+
+            if (isset($response['error'])) {
+                Log::error('Error fetching comments for post ' . $postId . ': ' . $response['error']['message']);
+                return [];
             }
+
+            return $response['data'] ?? [];
+        } catch (\Exception $e) {
+            Log::error('Exception fetching comments: ' . $e->getMessage());
             return [];
-        } catch (\Exception $e) {
-            Log::error('Get Instagram Accounts Error: ' . $e->getMessage());
-            return [];
-        }
-    }
-
-    /**
-     * Sync posts from Facebook page
-     */
-    public function syncFacebookPosts(): int
-    {
-        $syncedCount = 0;
-
-        try {
-            $response = $this->fb->get(
-                '/' . $this->account->platform_account_id . '/posts?fields=id,message,story,permalink_url,type,created_time,likes.summary(true).limit(0),comments.summary(true).limit(0),shares',
-                $this->account->access_token
-            );
-
-            $postsData = $response->getDecodedBody()['data'] ?? [];
-
-            foreach ($postsData as $post) {
-                $existingPost = SocialPost::where(
-                    'platform_post_id',
-                    $post['id']
-                )->first();
-
-                if (!$existingPost) {
-                    SocialPost::create([
-                        'social_account_id' => $this->account->id,
-                        'platform_post_id' => $post['id'],
-                        'content' => $post['message'] ?? $post['story'] ?? '',
-                        'post_url' => $post['permalink_url'] ?? null,
-                        'comments_count' => $post['comments']['summary']['total_count'] ?? 0,
-                        'likes_count' => $post['likes']['summary']['total_count'] ?? 0,
-                        'shares_count' => $post['shares']['total_count'] ?? 0,
-                        'posted_at' => $post['created_time'],
-                        'fetched_at' => now(),
-                    ]);
-                    $syncedCount++;
-                }
-            }
-
-            return $syncedCount;
-        } catch (\Exception $e) {
-            Log::error('Sync Facebook Posts Error: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * Sync comments from a Facebook post
-     */
-    public function syncPostComments(SocialPost $post): int
-    {
-        $syncedCount = 0;
-
-        try {
-            $response = $this->fb->get(
-                '/' . $post->platform_post_id . '/comments?fields=id,from,message,created_time,user_likes,comment_count,can_reply_privately',
-                $this->account->access_token
-            );
-
-            $commentsData = $response->getDecodedBody()['data'] ?? [];
-
-            foreach ($commentsData as $comment) {
-                $existingComment = SocialComment::where(
-                    'platform_comment_id',
-                    $comment['id']
-                )->first();
-
-                if (!$existingComment) {
-                    SocialComment::create([
-                        'social_post_id' => $post->id,
-                        'social_account_id' => $this->account->id,
-                        'platform_comment_id' => $comment['id'],
-                        'platform_author_id' => $comment['from']['id'],
-                        'author_name' => $comment['from']['name'],
-                        'content' => $comment['message'],
-                        'status' => 'new',
-                        'commented_at' => $comment['created_time'],
-                    ]);
-                    $syncedCount++;
-                }
-            }
-
-            return $syncedCount;
-        } catch (\Exception $e) {
-            Log::error('Sync Post Comments Error: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * Sync Instagram comments
-     */
-    public function syncInstagramComments(): int
-    {
-        $syncedCount = 0;
-        $igAccountId = $this->getInstagramAccounts()[0] ?? null;
-
-        if (!$igAccountId) {
-            return 0;
-        }
-
-        try {
-            // Get media (posts and reels)
-            $response = $this->fb->get(
-                '/' . $igAccountId . '/media?fields=id,caption,timestamp,media_type',
-                $this->account->access_token
-            );
-
-            $mediaData = $response->getDecodedBody()['data'] ?? [];
-
-            foreach ($mediaData as $media) {
-                // Get comments for each media
-                $commentsResponse = $this->fb->get(
-                    '/' . $media['id'] . '/comments?fields=id,from,text,timestamp',
-                    $this->account->access_token
-                );
-
-                $commentsData = $commentsResponse->getDecodedBody()['data'] ?? [];
-
-                foreach ($commentsData as $comment) {
-                    $existingComment = SocialComment::where(
-                        'platform_comment_id',
-                        $comment['id']
-                    )->first();
-
-                    if (!$existingComment) {
-                        // Create or get post
-                        $post = SocialPost::firstOrCreate(
-                            ['platform_post_id' => $media['id']],
-                            [
-                                'social_account_id' => $this->account->id,
-                                'content' => $media['caption'] ?? '',
-                                'posted_at' => $media['timestamp'],
-                                'fetched_at' => now(),
-                            ]
-                        );
-
-                        SocialComment::create([
-                            'social_post_id' => $post->id,
-                            'social_account_id' => $this->account->id,
-                            'platform_comment_id' => $comment['id'],
-                            'platform_author_id' => $comment['from']['id'],
-                            'author_name' => $comment['from']['username'] ?? $comment['from']['id'],
-                            'content' => $comment['text'],
-                            'status' => 'new',
-                            'commented_at' => $comment['timestamp'],
-                        ]);
-                        $syncedCount++;
-                    }
-                }
-            }
-
-            return $syncedCount;
-        } catch (\Exception $e) {
-            Log::error('Sync Instagram Comments Error: ' . $e->getMessage());
-            return 0;
         }
     }
 
     /**
      * Publish a reply to a comment
      */
-    public function publishReply(SocialComment $comment, string $replyText): bool
+    public function publishReply(SocialComment $comment, string $message, SocialAccount $account): bool
     {
         try {
-            $response = $this->fb->post(
-                '/' . $comment->platform_comment_id . '/private_replies',
-                ['message' => $replyText],
-                $this->account->access_token
-            );
+            $url = "https://graph.facebook.com/{$this->graphVersion}/" . $comment->platform_comment_id . "/private_replies?" .
+                "message=" . urlencode($message) . "&" .
+                "access_token=" . $account->access_token;
 
-            $responseData = $response->getDecodedBody();
-            return isset($responseData['id']);
+            $response = json_decode(file_get_contents($url), true);
+
+            if (isset($response['error'])) {
+                Log::error('Error publishing reply: ' . $response['error']['message']);
+                return false;
+            }
+
+            // Update comment status
+            $comment->update([
+                'status' => 'replied',
+                'ai_response_text' => $message,
+                'replied_at' => now(),
+            ]);
+
+            return true;
         } catch (\Exception $e) {
-            Log::error('Publish Reply Error: ' . $e->getMessage());
+            Log::error('Exception publishing reply: ' . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Subscribe to webhook for real-time updates
+     * Handle webhook events from Facebook
      */
-    public function subscribeToWebhook(): bool
+    public static function handleWebhookEvent(array $data): void
     {
-        try {
-            $response = $this->fb->post(
-                '/' . $this->account->platform_account_id . '/subscribed_apps',
-                [],
-                $this->account->access_token
-            );
+        Log::info('Facebook webhook event received', $data);
 
-            return isset($response->getDecodedBody()['success']);
+        $entry = $data['entry'] ?? [];
+
+        foreach ($entry as $item) {
+            $pageId = $item['id'];
+            $changes = $item['changes'] ?? [];
+
+            foreach ($changes as $change) {
+                $field = $change['field'];
+                $value = $change['value'];
+
+                if ($field === 'feed') {
+                    // New post or comment
+                    self::handleFeedChange($pageId, $value);
+                }
+            }
+        }
+    }
+
+    /**
+     * Handle feed changes from webhook
+     */
+    private static function handleFeedChange(string $pageId, array $data): void
+    {
+        $account = SocialAccount::where('platform_account_id', $pageId)->first();
+
+        if (!$account) {
+            Log::warning('Received webhook for unknown page: ' . $pageId);
+            return;
+        }
+
+        // If it's a comment
+        if (isset($data['comment_id'])) {
+            $service = new self();
+            $comment = $service->fetchSingleComment($account, $data['comment_id']);
+
+            if ($comment) {
+                $storedComment = SocialComment::updateOrCreate(
+                    [
+                        'platform_comment_id' => $comment['id'],
+                        'platform' => 'facebook',
+                    ],
+                    [
+                        'organization_id' => $account->organization_id,
+                        'social_account_id' => $account->id,
+                        'author_name' => $comment['from']['name'] ?? 'Unknown',
+                        'author_id' => $comment['from']['id'] ?? null,
+                        'content' => $comment['message'] ?? '',
+                        'commented_at' => $comment['created_time'] ?? now(),
+                        'status' => 'new',
+                    ]
+                );
+
+                // Dispatch AI analysis
+                \App\Jobs\AnalyzeCommentWithAI::dispatch($storedComment);
+
+                Log::info('New comment stored from webhook: ' . $storedComment->id);
+            }
+        }
+    }
+
+    /**
+     * Fetch a single comment by ID
+     */
+    private function fetchSingleComment(SocialAccount $account, string $commentId): ?array
+    {
+        $url = "https://graph.facebook.com/{$this->graphVersion}/{$commentId}?" .
+            "fields=id,message,created_time,from&" .
+            "access_token=" . $account->access_token;
+
+        try {
+            $response = json_decode(file_get_contents($url), true);
+
+            if (isset($response['error'])) {
+                Log::error('Error fetching comment: ' . $response['error']['message']);
+                return null;
+            }
+
+            return $response;
         } catch (\Exception $e) {
-            Log::error('Subscribe Webhook Error: ' . $e->getMessage());
-            return false;
+            Log::error('Exception fetching comment: ' . $e->getMessage());
+            return null;
         }
     }
 
     /**
      * Verify webhook signature
      */
-    public static function verifyWebhookSignature(string $signature, string $body): bool
+    public static function verifyWebhookSignature(string $hubSignature, string $body): bool
     {
-        $expectedSignature = hash_hmac(
-            'sha256',
-            $body,
-            env('FACEBOOK_APP_SECRET'),
-            true
-        );
+        $appSecret = env('FACEBOOK_APP_SECRET');
+        $expectedSignature = 'sha1=' . hash_hmac('sha1', $body, $appSecret);
 
-        return hash_equals(
-            bin2hex($expectedSignature),
-            $signature
-        );
-    }
-
-    /**
-     * Handle webhook events
-     */
-    public static function handleWebhookEvent(array $event): void
-    {
-        if (!isset($event['object']) || $event['object'] !== 'page') {
-            return;
-        }
-
-        foreach ($event['entry'] ?? [] as $entry) {
-            $pageId = $entry['id'];
-            $account = SocialAccount::where('platform_account_id', $pageId)->first();
-
-            if (!$account) {
-                return;
-            }
-
-            // Handle different event types
-            foreach ($entry['messaging'] ?? [] as $message) {
-                // Handle new messages/comments
-                if (isset($message['message'])) {
-                    \App\Jobs\ProcessFacebookComment::dispatch($message, $account);
-                }
-            }
-
-            foreach ($entry['changes'] ?? [] as $change) {
-                if ($change['field'] === 'comments') {
-                    \App\Jobs\ProcessFacebookComment::dispatch($change['value'], $account);
-                }
-            }
-        }
+        return hash_equals($expectedSignature, $hubSignature);
     }
 }

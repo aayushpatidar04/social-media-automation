@@ -1,7 +1,9 @@
 <?php
 
+// app/Jobs/SyncFacebookComments.php
+
 namespace App\Jobs;
- 
+
 use App\Models\SocialAccount;
 use App\Services\FacebookService;
 use Illuminate\Bus\Queueable;
@@ -10,54 +12,61 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
- 
+
 class SyncFacebookComments implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
- 
+
+    public $timeout = 300; // 5 minutes
     public $tries = 3;
-    public $backoff = [60, 120, 300];
- 
+    public $maxExceptions = 3;
+
     private SocialAccount $account;
- 
+
     public function __construct(SocialAccount $account)
     {
         $this->account = $account;
     }
- 
-    public function handle(): void
+
+    public function handle()
     {
         try {
-            $service = new FacebookService($this->account);
- 
-            // Sync Facebook posts and comments
-            $facebookPostCount = $service->syncFacebookPosts();
-            Log::info("Synced {$facebookPostCount} Facebook posts for account {$this->account->id}");
- 
-            // Also sync Instagram if connected
-            $instagramCommentCount = $service->syncInstagramComments();
-            Log::info("Synced {$instagramCommentCount} Instagram comments for account {$this->account->id}");
- 
-            // Update last synced time
-            $this->account->update(['last_synced_at' => now()]);
- 
-            // Dispatch analysis jobs for new comments
-            $this->dispatchAnalysisJobs();
+            Log::info('Starting sync job for account: ' . $this->account->platform_account_name);
+
+            $service = new FacebookService();
+            $commentCount = $service->syncPageComments($this->account);
+
+            Log::info('Sync job completed. Comments synced: ' . $commentCount);
+
+            // Broadcast update
+            \App\Models\ActivityLog::create([
+                'organization_id' => $this->account->organization_id,
+                'user_id' => $this->account->user_id,
+                'action' => 'sync_completed',
+                'entity_type' => 'social_account',
+                'entity_id' => $this->account->id,
+                'data' => ['comments_synced' => $commentCount],
+            ]);
+
         } catch (\Exception $e) {
-            Log::error("Facebook Sync Error: " . $e->getMessage());
-            $this->fail($e);
+            Log::error('Sync job failed: ' . $e->getMessage(), [
+                'account_id' => $this->account->id,
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            throw $e;
         }
     }
- 
-    private function dispatchAnalysisJobs(): void
+
+    public function failed(\Exception $exception)
     {
-        $newComments = $this->account->socialComments()
-            ->where('sentiment', 'pending')
-            ->limit(50)
-            ->get();
- 
-        foreach ($newComments as $comment) {
-            AnalyzeCommentWithAI::dispatch($comment);
-        }
+        Log::error('Sync job permanently failed for account: ' . $this->account->id, [
+            'error' => $exception->getMessage(),
+        ]);
+
+        $this->account->update([
+            'status' => 'error',
+            'error_message' => $exception->getMessage(),
+        ]);
     }
 }
