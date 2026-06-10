@@ -1,0 +1,40 @@
+{
+    "$schema": "https://www.schemastore.org/package.json",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "vite build",
+        "dev": "vite"
+    },
+    "devDependencies": {
+        "@headlessui/vue": "^1.7.16",
+        "@heroicons/vue": "^2.0.18",
+        "@inertiajs/vue3": "^2.0.0",
+        "@laravel/echo-vue": "^2.3.7",
+        "@tailwindcss/forms": "^0.5.3",
+        "@tailwindcss/typography": "^0.5.10",
+        "@tailwindcss/vite": "^4.0.0",
+        "@vitejs/plugin-vue": "^6.0.0",
+        "autoprefixer": "^10.4.12",
+        "axios": "^1.6.2",
+        "concurrently": "^9.0.1",
+        "laravel-echo": "^2.3.7",
+        "laravel-vite-plugin": "^3.1",
+        "postcss": "^8.4.31",
+        "pusher-js": "^8.5.0",
+        "tailwindcss": "^3.2.1",
+        "vite": "^8.0.0",
+        "vue": "^3.4.0"
+    },
+    "dependencies": {
+        "@vue/test-utils": "^2.4.3",
+        "chart.js": "^4.4.1",
+        "dayjs": "^1.11.10",
+        "echarts": "^5.4.3",
+        "lodash-es": "^4.17.21",
+        "pinia": "^2.1.6",
+        "pusher-js": "^8.4.0-beta",
+        "recharts": "^2.10.3",
+        "vue-router": "^4.2.5"
+    }
+}
