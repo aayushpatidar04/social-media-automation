@@ -190,23 +190,32 @@ class FacebookService
     /**
      * Get all posts from a Facebook page
      */
+
     private function getPagePosts(SocialAccount $account): array
     {
-        Log::info('aayush-patidar');
-        $url = "https://graph.facebook.com/{$this->graphVersion}/" . $account->platform_account_id . "/posts?" .
-            "fields=id,message,created_time,type,link&" .
-            "limit=100&" .
-            "access_token=" . $account->access_token;
-        
-        $response = json_decode(file_get_contents($url), true);
-        Log::info($response);
-            
-        if (isset($response['error'])) {
-            Log::error('Error fetching posts: ' . $response['error']['message']);
-            return [];
+        $response = Http::get(
+            "https://graph.facebook.com/{$this->graphVersion}/{$account->platform_account_id}/posts",
+            [
+                'fields' => 'id,message,created_time,type,link',
+                'limit' => 100,
+                'access_token' => $account->access_token,
+            ]
+        );
+
+        Log::info('Facebook Posts Response', [
+            'status' => $response->status(),
+            'body' => $response->body(),
+        ]);
+
+        $data = $response->json();
+
+        if (!$response->successful()) {
+            throw new \Exception(
+                $data['error']['message'] ?? 'Facebook API Error'
+            );
         }
 
-        return $response['data'] ?? [];
+        return $data['data'] ?? [];
     }
 
     /**
