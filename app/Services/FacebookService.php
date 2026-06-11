@@ -159,7 +159,7 @@ class FacebookService
                             'social_account_id' => $account->id,
                             'social_post_id' => $storedPost->id,
                             'author_name' => $comment['from']['name'] ?? 'Unknown',
-                            'platform_author_id' => $comment['from']['id'] ?? null,
+                            'platform_author_id' => $comment['from']['id'] ?? 'JinTouchFinancialServices',
                             'content' => $comment['message'] ?? '',
                             'commented_at' => $comment['created_time'] ?? now(),
                             'status' => 'new',
