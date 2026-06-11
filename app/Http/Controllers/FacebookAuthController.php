@@ -25,7 +25,7 @@ class FacebookAuthController extends Controller
             return back()->with('error', 'Facebook configuration missing. Add FACEBOOK_APP_ID and FACEBOOK_REDIRECT_URI to .env');
         }
 
-        $scope = 'Business Asset User Profile Access,email,pages_manage_engagement,public_profile,pages_read_user_content,pages_read_engagement,instagram_basic,pages_manage_metadata,pages_show_list,business_management,instagram_manage_comments';
+        $scope = 'business_asset_user_profile_access,email,pages_manage_engagement,public_profile,pages_read_user_content,pages_read_engagement,instagram_basic,pages_manage_metadata,pages_show_list,business_management,instagram_manage_comments';
         $state = bin2hex(random_bytes(16));
         
         // Store state in session for validation
