@@ -15,13 +15,15 @@ class OpenAIService
 {
     private Client $client;
     private const EMBEDDING_MODEL = 'text-embedding-3-small';
-    private const ANALYSIS_MODEL = 'gpt-4-turbo-preview';
-    private const RESPONSE_MODEL = 'gpt-4-turbo-preview';
+    private const ANALYSIS_MODEL = 'gpt-4.1-mini';
+    private const RESPONSE_MODEL = 'gpt-4.1-mini';
 
     public function __construct()
     {
         // Use the Factory to create a Client instance
-        $this->client = Factory::create(env('OPENAI_API_KEY'));
+        $this->client = (new Factory())
+            ->withApiKey(env('OPENAI_API_KEY'))
+            ->make();
     }
 
     /**
@@ -50,7 +52,7 @@ class OpenAIService
             ]);
 
             $content = $response->choices[0]->message->content;
-            
+
             // Extract JSON from response
             preg_match('/\{.*\}/s', $content, $matches);
             if (!$matches) {
@@ -147,11 +149,11 @@ class OpenAIService
             // Search similar chunks in knowledge base
             $relevantChunks = KnowledgeChunk::whereHas('knowledgeSource', function ($q) use ($organizationId) {
                 $q->where('organization_id', $organizationId)
-                  ->where('is_indexed', true);
+                    ->where('is_indexed', true);
             })
-            ->select('id', 'content', 'knowledge_source_id')
-            ->limit($limit)
-            ->get();
+                ->select('id', 'content', 'knowledge_source_id')
+                ->limit($limit)
+                ->get();
 
             // TODO: Implement vector similarity search when vector DB is ready
             // For now, return content-based matches
@@ -221,10 +223,11 @@ class OpenAIService
         string $intent,
         array $knowledgeContext
     ): string {
-        $contextText = !empty($knowledgeContext) 
-            ? "Knowledge Base References:\n" . implode("\n\n", 
+        $contextText = !empty($knowledgeContext)
+            ? "Knowledge Base References:\n" . implode(
+                "\n\n",
                 array_map(fn($k) => "- {$k['source']}: {$k['content']}", $knowledgeContext)
-              )
+            )
             : "No specific knowledge base information available.";
 
         return <<<PROMPT
