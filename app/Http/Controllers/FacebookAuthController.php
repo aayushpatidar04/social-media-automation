@@ -8,6 +8,7 @@ use App\Models\SocialAccount;
 use App\Models\Organization;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class FacebookAuthController extends Controller
@@ -150,8 +151,8 @@ class FacebookAuthController extends Controller
                "&redirect_uri=" . urlencode($redirectUri) .
                "&code={$code}";
 
-        $response = file_get_contents($url);
-        return json_decode($response, true) ?? [];
+        $response = Http::get($url);
+        return $response->json() ?? [];
     }
 
     /**
@@ -165,8 +166,8 @@ class FacebookAuthController extends Controller
                "fields=id,name,picture,access_token&" .
                "access_token={$accessToken}";
 
-        $response = file_get_contents($url);
-        $data = json_decode($response, true) ?? [];
+        $response = Http::get($url);
+        $data = $response->json() ?? [];
 
         return $data['data'] ?? [];
     }
@@ -216,8 +217,8 @@ class FacebookAuthController extends Controller
             $version = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
             $url = "https://graph.facebook.com/{$version}/me?fields=id,name,email&access_token={$token}";
             
-            $response = file_get_contents($url);
-            $data = json_decode($response, true);
+            $response = Http::get($url);
+            $data = $response->json();
 
             if (isset($data['error'])) {
                 return response()->json(['error' => $data['error']['message']], 400);

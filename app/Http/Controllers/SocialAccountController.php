@@ -9,6 +9,7 @@ use App\Jobs\SyncFacebookComments;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class SocialAccountController extends Controller
@@ -126,8 +127,8 @@ class SocialAccountController extends Controller
             $version = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
             $url = "https://graph.facebook.com/{$version}/" . $account->platform_account_id . "/posts?limit=1&access_token=" . $account->access_token;
             
-            $response = @file_get_contents($url);
-            $data = json_decode($response, true);
+            $response = Http::get($url);
+            $data = $response->json();
 
             if (isset($data['error'])) {
                 return response()->json([

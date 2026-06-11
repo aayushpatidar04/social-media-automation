@@ -71,7 +71,8 @@ class FacebookService
             "&redirect_uri=" . urlencode($redirectUri) .
             "&code={$code}";
 
-        $tokenResponse = json_decode(file_get_contents($tokenUrl), true);
+        $response = Http::get($tokenUrl);
+        $tokenResponse = $response->json();
 
         if (isset($tokenResponse['error'])) {
             throw new \Exception('Facebook error: ' . $tokenResponse['error']['message']);
@@ -84,7 +85,8 @@ class FacebookService
             "fields=id,name,picture,access_token&" .
             "access_token={$accessToken}";
 
-        $pagesResponse = json_decode(file_get_contents($pagesUrl), true);
+        $response = Http::get($pagesUrl);
+        $pagesResponse = $response->json();
 
         if (isset($pagesResponse['error'])) {
             throw new \Exception('Failed to get pages: ' . $pagesResponse['error']['message']);
@@ -229,14 +231,15 @@ class FacebookService
             "access_token=" . $account->access_token;
 
         try {
-            $response = json_decode(file_get_contents($url), true);
+            $response = Http::get($url);
+            $data = $response->json();
 
-            if (isset($response['error'])) {
-                Log::error('Error fetching comments for post ' . $postId . ': ' . $response['error']['message']);
+            if (isset($data['error'])) {
+                Log::error('Error fetching comments for post ' . $postId . ': ' . $data['error']['message']);
                 return [];
             }
 
-            return $response['data'] ?? [];
+            return $data['data'] ?? [];
         } catch (\Exception $e) {
             Log::error('Exception fetching comments: ' . $e->getMessage());
             return [];
@@ -253,10 +256,11 @@ class FacebookService
                 "message=" . urlencode($message) . "&" .
                 "access_token=" . $account->access_token;
 
-            $response = json_decode(file_get_contents($url), true);
+            $response = Http::post($url);
+            $data = $response->json();
 
-            if (isset($response['error'])) {
-                Log::error('Error publishing reply: ' . $response['error']['message']);
+            if (isset($data['error'])) {
+                Log::error('Error publishing reply: ' . $data['error']['message']);
                 return false;
             }
 
@@ -351,14 +355,15 @@ class FacebookService
             "access_token=" . $account->access_token;
 
         try {
-            $response = json_decode(file_get_contents($url), true);
+            $response = Http::get($url);
+            $data = $response->json();
 
-            if (isset($response['error'])) {
-                Log::error('Error fetching comment: ' . $response['error']['message']);
+            if (isset($data['error'])) {
+                Log::error('Error fetching comment: ' . $data['error']['message']);
                 return null;
             }
 
-            return $response;
+            return $data;
         } catch (\Exception $e) {
             Log::error('Exception fetching comment: ' . $e->getMessage());
             return null;
