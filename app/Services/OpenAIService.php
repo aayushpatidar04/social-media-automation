@@ -197,20 +197,20 @@ class OpenAIService
     private function buildAnalysisPrompt(string $comment): string
     {
         return <<<PROMPT
-Analyze this social media comment and provide structured JSON response:
+        Analyze this social media comment and provide structured JSON response:
 
-Comment: "$comment"
+        Comment: "$comment"
 
-Return ONLY valid JSON (no markdown, no extra text):
-{
-  "sentiment": "positive|neutral|negative",
-  "sentiment_score": <0-100>,
-  "intent": "sales|support|complaint|question|general|lead",
-  "lead_score": <0-100>,
-  "confidence": <0-100>,
-  "summary": "brief summary"
-}
-PROMPT;
+        Return ONLY valid JSON (no markdown, no extra text):
+        {
+        "sentiment": "positive|neutral|negative",
+        "sentiment_score": <0-100>,
+        "intent": "sales|support|complaint|question|general|lead",
+        "lead_score": <0-100>,
+        "confidence": <0-100>,
+        "summary": "brief summary"
+        }
+        PROMPT;
     }
 
     /**

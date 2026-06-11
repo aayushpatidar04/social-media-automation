@@ -1,0 +1,114 @@
+<?php
+
+// app/Services/FacebookService.php - COMPLETE VERSION
+
+namespace App\Services;
+
+use App\Jobs\AnalyzeCommentWithAI;
+use App\Models\SocialAccount;
+use App\Models\SocialComment;
+use App\Models\SocialPost;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
+
+class InstagramService
+{
+    protected string $graphVersion = 'v25.0';
+
+    public function syncComments(SocialAccount $account): int
+    {
+        $totalComments = 0;
+
+        $mediaList = $this->getMedia($account);
+
+        foreach ($mediaList as $media) {
+
+            $storedPost = SocialPost::updateOrCreate(
+                [
+                    'platform_post_id' => $media['id'],
+                    'platform' => 'instagram',
+                ],
+                [
+                    'organization_id' => $account->organization_id,
+                    'social_account_id' => $account->id,
+                    'content' => $media['caption'] ?? '',
+                    'posted_at' => $media['timestamp'] ?? now(),
+                ]
+            );
+
+            $comments = $this->getMediaComments(
+                $account,
+                $media['id']
+            );
+
+            foreach ($comments as $comment) {
+
+                $storedComment = SocialComment::updateOrCreate(
+                    [
+                        'platform_comment_id' => $comment['id'],
+                        'platform' => 'instagram',
+                    ],
+                    [
+                        'organization_id' => $account->organization_id,
+                        'social_account_id' => $account->id,
+                        'social_post_id' => $storedPost->id,
+                        'author_name' => $comment['username'] ?? 'Unknown',
+                        'platform_author_id' => $comment['username'] ?? null,
+                        'content' => $comment['text'] ?? '',
+                        'commented_at' => $comment['timestamp'] ?? now(),
+                        'status' => 'new',
+                    ]
+                );
+
+                $totalComments++;
+
+                AnalyzeCommentWithAI::dispatch($storedComment);
+            }
+        }
+
+        return $totalComments;
+    }
+
+    private function getMedia(SocialAccount $account): array
+    {
+        $response = Http::get(
+            "https://graph.facebook.com/{$this->graphVersion}/{$account->platform_account_id}/media",
+            [
+                'fields' =>
+                    'id,caption,media_type,timestamp',
+                'limit' => 100,
+                'access_token' => $account->access_token,
+            ]
+        );
+
+        $data = $response->json();
+
+        if (!$response->successful()) {
+            throw new \Exception($data['error']['message']);
+        }
+
+        return $data['data'] ?? [];
+    }
+
+    private function getMediaComments(SocialAccount $account, string $mediaId): array {
+        $response = Http::get(
+            "https://graph.facebook.com/{$this->graphVersion}/{$mediaId}/comments",
+            [
+                'fields' =>
+                    'id,text,username,timestamp',
+                'limit' => 100,
+                'access_token' => $account->access_token,
+            ]
+        );
+
+        $data = $response->json();
+
+        if (!$response->successful()) {
+            Log::error($data);
+
+            return [];
+        }
+
+        return $data['data'] ?? [];
+    }
+}

@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Models\SocialAccount;
 use App\Jobs\SyncFacebookComments;
+use App\Jobs\SyncInstagramComments;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
@@ -45,6 +46,7 @@ class SocialAccountController extends Controller
 
             // Dispatch sync job
             SyncFacebookComments::dispatch($account);
+            SyncInstagramComments::dispatch($account);
 
             return response()->json([
                 'message' => 'Sync started! Comments will be updated shortly.',

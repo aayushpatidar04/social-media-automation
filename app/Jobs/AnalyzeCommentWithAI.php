@@ -58,8 +58,8 @@ class AnalyzeCommentWithAI implements ShouldQueue
             }
 
             // Broadcast update to dashboard
-            \Illuminate\Support\Facades\Broadcast::channel('analytics.org.' . $this->comment->organization_id)
-                ->notify(new \App\Notifications\CommentAnalyzed($this->comment));
+            // \Illuminate\Support\Facades\Broadcast::channel('analytics.org.' . $this->comment->organization_id)
+            //     ->notify(new \App\Notifications\CommentAnalyzed($this->comment));
 
         } catch (\Exception $e) {
             Log::error('AI analysis failed for comment: ' . $this->comment->id . ' - ' . $e->getMessage());
