@@ -17,7 +17,7 @@
                 <!-- Header -->
                 <div class="sticky top-0 bg-slate-800 border-b border-slate-700 p-6 pt-16 lg:pt-6">
                     <h3 class="text-lg font-bold text-white">{{ comment.author_name }}</h3>
-                    <p class="text-slate-400 text-sm">{{ comment.socialAccount.platform }}</p>
+                    <p class="text-slate-400 text-sm">{{ comment.social_account.platform }}</p>
                 </div>
 
                 <!-- Content -->

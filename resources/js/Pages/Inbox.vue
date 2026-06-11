@@ -119,7 +119,7 @@
                   <div class="flex-1">
                     <p class="font-semibold text-white">{{ comment.author_name }}</p>
                     <p class="text-xs text-slate-400">
-                      {{ comment.socialAccount.platform }} •
+                      {{ comment.social_account.platform }} •
                       {{ formatDate(comment.commented_at) }}
                     </p>
                   </div>

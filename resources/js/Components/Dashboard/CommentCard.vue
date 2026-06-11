@@ -40,7 +40,7 @@ const intentBadge = computed(() => {
         <div class="flex justify-between items-start mb-2">
             <div class="flex-1">
                 <p class="font-medium text-white">{{ comment.author_name }}</p>
-                <p class="text-xs text-slate-400">{{ comment.socialAccount.platform }}</p>
+                <p class="text-xs text-slate-400">{{ comment.social_account.platform }}</p>
             </div>
             <div class="flex gap-2">
                 <span :class="['text-sm', sentimentColor]">{{ comment.sentiment }}</span>
