@@ -16,7 +16,7 @@ class FacebookService
 
     public function __construct()
     {
-        $this->graphVersion = env('FACEBOOK_GRAPH_VERSION', 'v25.0');
+        $this->graphVersion = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
     }
 
     /**

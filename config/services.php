@@ -38,7 +38,7 @@ return [
     'facebook' => [
         'app_id' => env('FACEBOOK_APP_ID'),
         'app_secret' => env('FACEBOOK_APP_SECRET'),
-        'default_graph_version' => env('FACEBOOK_GRAPH_VERSION', 'v25.0'),
+        'default_graph_version' => env('FACEBOOK_GRAPH_VERSION', 'v18.0'),
     ],
  
     'openai' => [
