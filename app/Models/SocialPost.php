@@ -11,6 +11,7 @@ class SocialPost extends Model
     use SoftDeletes;
 
     protected $fillable = [
+        'platform',
         'social_account_id',
         'platform_post_id',
         'content',

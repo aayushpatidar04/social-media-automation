@@ -11,6 +11,7 @@ class SocialComment extends Model
     use SoftDeletes;
 
     protected $fillable = [
+        'platform',
         'social_post_id',
         'social_account_id',
         'platform_comment_id',

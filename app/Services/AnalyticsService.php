@@ -280,7 +280,7 @@ class AnalyticsService
             return 0;
         }
 
-        $responded = $this->organization->socialComments()->where('status', 'replied')->count();
+        $responded = $this->organization->socialComments()->where('social_comments.status', 'replied')->count();
         return round(($responded / $total) * 100, 2);
     }
 

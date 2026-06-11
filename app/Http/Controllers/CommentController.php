@@ -28,7 +28,7 @@ class CommentController extends Controller
 
         // Apply filters
         if ($request->has('status') && $request->status !== '') {
-            $query->where('status', $request->status);
+            $query->where('social_comments.status', $request->status);
         }
 
         if ($request->has('sentiment') && $request->sentiment !== '') {
@@ -72,7 +72,7 @@ class CommentController extends Controller
 
         // Apply all filters
         if ($request->status) {
-            $query->where('status', $request->status);
+            $query->where('social_comments.status', $request->status);
         }
         if ($request->sentiment) {
             $query->where('sentiment', $request->sentiment);
