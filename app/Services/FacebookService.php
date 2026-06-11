@@ -163,10 +163,6 @@ class FacebookService
                             'content' => $comment['message'] ?? '',
                             'commented_at' => $comment['created_time'] ?? now(),
                             'status' => 'new',
-                            'sentiment' => null,
-                            'sentiment_score' => null,
-                            'intent' => null,
-                            'lead_score' => null,
                         ]
                     );
 
