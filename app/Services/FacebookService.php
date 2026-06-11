@@ -196,7 +196,6 @@ class FacebookService
         $response = Http::get(
             "https://graph.facebook.com/{$this->graphVersion}/{$account->platform_account_id}/posts",
             [
-                'fields' => 'id,message,created_time,type,link',
                 'limit' => 100,
                 'access_token' => $account->access_token,
             ]
