@@ -69,13 +69,49 @@ class InstagramService
         return $totalComments;
     }
 
+    private function getConnectedInstagramAccount(
+        SocialAccount $account
+    ): ?string {
+        $response = Http::get(
+            "https://graph.facebook.com/{$this->graphVersion}/{$account->platform_account_id}",
+            [
+                'fields' => 'connected_instagram_account',
+                'access_token' => $account->access_token,
+            ]
+        );
+
+        $data = $response->json();
+
+        Log::info('Instagram Account Lookup', $data);
+
+        if (!$response->successful()) {
+            throw new \Exception(
+                $data['error']['message'] ?? 'Unable to fetch Instagram account'
+            );
+        }
+
+        return $data['connected_instagram_account']['id'] ?? null;
+    }
+
     private function getMedia(SocialAccount $account): array
     {
+        $instagramId = $this->getConnectedInstagramAccount($account);
+
+        if (!$instagramId) {
+            Log::warning(
+                'No Instagram account connected to page ' .
+                $account->platform_account_name
+            );
+
+            return [];
+        }
+
+        Log::info("Instagram ID: {$instagramId}");
+
         $response = Http::get(
-            "https://graph.facebook.com/{$this->graphVersion}/{$account->platform_account_id}/media",
+            "https://graph.facebook.com/{$this->graphVersion}/{$instagramId}/media",
             [
-                'fields' =>
-                    'id,caption,media_type,timestamp',
+                'fields' => 'id,caption,media_type,timestamp',
                 'limit' => 100,
                 'access_token' => $account->access_token,
             ]
@@ -83,14 +119,22 @@ class InstagramService
 
         $data = $response->json();
 
+        Log::info('Instagram Media Response', [
+            'status' => $response->status(),
+            'body' => $response->body(),
+        ]);
+
         if (!$response->successful()) {
-            throw new \Exception($data['error']['message']);
+            throw new \Exception(
+                $data['error']['message'] ?? 'Unable to fetch media'
+            );
         }
 
         return $data['data'] ?? [];
     }
 
-    private function getMediaComments(SocialAccount $account, string $mediaId): array {
+    private function getMediaComments(SocialAccount $account, string $mediaId): array
+    {
         $response = Http::get(
             "https://graph.facebook.com/{$this->graphVersion}/{$mediaId}/comments",
             [
