@@ -79,8 +79,9 @@ class AnalyzeWithOllama implements ShouldQueue
                 'intent_confidence' => $analysis['confidence'],
                 'lead_score' => $analysis['lead_score'],
                 'is_lead' => $analysis['is_lead'],
-                'ai_analysis_completed_at' => now(),
                 'ai_analysis_failed' => false,
+                'ai_error_message' => null,
+                'ai_analysis_completed_at' => now(),
             ]);
 
             Log::info('✅ Comment updated with analysis: ' . $this->comment->id);
@@ -107,6 +108,8 @@ class AnalyzeWithOllama implements ShouldQueue
                 'ai_analysis_failed' => true,
                 'ai_error_message' => $e->getMessage(),
                 'ai_analysis_completed_at' => now(),
+                'sentiment' => 'pending',
+                'intent' => 'pending',
             ]);
 
             throw $e;
@@ -122,6 +125,8 @@ class AnalyzeWithOllama implements ShouldQueue
             'ai_analysis_failed' => true,
             'ai_error_message' => 'Job failed after ' . $this->tries . ' attempts',
             'ai_analysis_completed_at' => now(),
+            'sentiment' => 'pending',
+            'intent' => 'pending',
         ]);
     }
 }

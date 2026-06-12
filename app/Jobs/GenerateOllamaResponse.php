@@ -55,17 +55,18 @@ class GenerateOllamaResponse implements ShouldQueue
 
             // Store the AI conversation
             $aiConversation = AiConversation::create([
-                'organization_id' => $this->comment->organization_id,
+                'original_comment' => $this->comment->content,
                 'social_comment_id' => $this->comment->id,
+                'social_account_id' => $this->comment->social_account_id,
                 'ai_response' => $response,
                 'response_status' => 'pending', // Waiting for human approval
-                'confidence' => 0.8,
+                'confidence_score' => $this->comment->intent_confidence ?? 80, // Use confidence from analysis
                 'model_used' => 'ollama_gemma2',
             ]);
 
             Log::info('✅ AI conversation stored: ' . $aiConversation->id);
 
-            // Update comment status
+            // Update comment with the generated response
             $this->comment->update([
                 'ai_response_text' => $response,
                 'status' => 'pending_approval',
