@@ -86,9 +86,9 @@ class AnalyzeWithOllama implements ShouldQueue
             Log::info('✅ Comment updated with analysis: ' . $this->comment->id);
 
             // If it's a potential lead or support request, generate AI response
+            Log::info('🤖 Generating AI response...');
+            GenerateOllamaResponse::dispatch($this->comment);
             if ($analysis['is_lead'] || $analysis['intent'] === 'sales' || $analysis['intent'] === 'support') {
-                Log::info('🤖 Generating AI response...');
-                GenerateAIResponse::dispatch($this->comment);
             }
 
             // Broadcast update
