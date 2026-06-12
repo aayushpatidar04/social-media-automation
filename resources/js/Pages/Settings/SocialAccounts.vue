@@ -12,6 +12,10 @@
                         class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium">
                         + Connect YouTube
                     </a>
+                    <a :href="twitterLoginUrl"
+                        class="px-4 py-2 bg-black hover:bg-gray-800 text-white rounded-lg font-medium">
+                        + Connect X
+                    </a>
                 </div>
             </div>
 
@@ -41,7 +45,11 @@
                             </button>
 
                             <button v-if="account.platform === 'youtube'" @click="syncYoutube(account.id)"
-                                class="px-3 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm">
+                                class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm">
+                                Sync Now
+                            </button>
+                            <button v-if="account.platform === 'twitter'" @click="syncTwitter(account.id)"
+                                class="px-3 py-2 bg-black text-white rounded text-sm">
                                 Sync Now
                             </button>
                             <button @click="disconnect(account.id)"
@@ -91,6 +99,7 @@ const props = defineProps({
 
 const facebookLoginUrl = ref(props.facebook_login_url || '#')
 const youtubeLoginUrl = '/auth/youtube/login'
+const twitterLoginUrl = '/auth/twitter/login'
 
 const syncNow = async (accountId) => {
     try {
@@ -107,6 +116,15 @@ const syncYoutube = async (accountId) => {
         console.log(response.data.message)
     } catch (error) {
         console.error('YouTube sync failed:', error.response?.data || error.message)
+    }
+}
+
+const syncTwitter = async (accountId) => {
+    try {
+        const response = await axios.post(`/settings/social-accounts/${accountId}/twitter-sync`)
+        console.log(response.data.message)
+    } catch (error) {
+        console.error('X sync failed:', error.response?.data || error.message)
     }
 }
 

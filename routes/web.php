@@ -8,6 +8,7 @@ use App\Http\Controllers\FacebookAuthController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\KnowledgeBaseController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\TwitterController;
 use App\Http\Controllers\YoutubeController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
@@ -242,6 +243,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/youtube/comments/{comment}/reply', [YoutubeController::class, 'reply'])
         ->name('youtube.comment.reply');
 
+    // ============================================
+    // Twitter OAUTH & SYNC ROUTES
+    // ============================================
+
+    Route::get('/auth/twitter/login', [TwitterController::class, 'login'])->name('twitter.login');
+
+    Route::get('/auth/twitter/callback', [TwitterController::class, 'callback'])->name('twitter.callback');
+
+    Route::post('/settings/social-accounts/{account}/twitter-sync', [TwitterController::class, 'sync'])->name('twitter.sync');
+
 });
 
 // ============================================
@@ -325,4 +336,4 @@ if (!function_exists('verifyFacebookSignature')) {
     }
 }
 
-require __DIR__.'/auth.php';
+require __DIR__ . '/auth.php';
