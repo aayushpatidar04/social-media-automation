@@ -13,19 +13,20 @@
     "require": {
         "php": "^8.3",
         "facebook/graph-sdk": "^5.1",
+        "guzzlehttp/guzzle": "^7.8",
         "illuminate/bus": "*",
         "inertiajs/inertia-laravel": "^2.0",
         "laravel/breeze": "^2.4",
         "laravel/framework": "^13.8",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0",
+        "league/csv": "^9.14",
+        "mpdf/mpdf": "^8.2",
         "openai-php/client": "^0.19.2",
         "pusher/pusher-php-server": "^7.2",
+        "smalot/pdfparser": "^2.12",
         "spatie/laravel-permission": "^8.0",
-        "tightenco/ziggy": "^2.0",
-        "mpdf/mpdf": "^8.2",
-        "league/csv": "^9.14",
-        "guzzlehttp/guzzle": "^7.8"
+        "tightenco/ziggy": "^2.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

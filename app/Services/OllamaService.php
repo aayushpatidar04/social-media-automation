@@ -76,18 +76,18 @@ class OllamaService
     {
         try {
             $prompt = <<<PROMPT
-Classify the intent of this social media comment. Response MUST be ONLY one word from this list:
-- sales (asking about products/pricing)
-- support (needs help/has issue)
-- complaint (unhappy/negative)
-- question (asking for information)
-- lead (potential customer interest)
-- general (other)
+                Classify the intent of this social media comment. Response MUST be ONLY one word from this list:
+                - sales (asking about products/pricing)
+                - support (needs help/has issue)
+                - complaint (unhappy/negative)
+                - question (asking for information)
+                - lead (potential customer interest)
+                - general (other)
 
-Comment: "$content"
+                Comment: "$content"
 
-Response (single word only):
-PROMPT;
+                Response (single word only):
+                PROMPT;
 
             $intent = trim($this->callOllama($prompt));
 
@@ -115,15 +115,15 @@ PROMPT;
     {
         try {
             $prompt = <<<PROMPT
-Analyze the sentiment of this comment. Response MUST be ONLY one word:
-- positive
-- negative
-- neutral
+                Analyze the sentiment of this comment. Response MUST be ONLY one word:
+                - positive
+                - negative
+                - neutral
 
-Comment: "$content"
+                Comment: "$content"
 
-Response (single word only):
-PROMPT;
+                Response (single word only):
+                PROMPT;
 
             $sentiment = trim(strtolower($this->callOllama($prompt)));
 
@@ -152,12 +152,12 @@ PROMPT;
     {
         try {
             $prompt = <<<PROMPT
-Is this a comment from a potential customer lead? Response MUST be YES or NO only.
+                Is this a comment from a potential customer lead? Response MUST be YES or NO only.
 
-Comment: "$content"
+                Comment: "$content"
 
-Response (YES or NO only):
-PROMPT;
+                Response (YES or NO only):
+                PROMPT;
 
             $response = trim(strtoupper($this->callOllama($prompt)));
             $isLead = strpos($response, 'YES') !== false;
@@ -179,18 +179,18 @@ PROMPT;
     private function buildAnalysisPrompt(string $content): string
     {
         return <<<PROMPT
-Analyze this social media comment and provide a brief analysis.
+            Analyze this social media comment and provide a brief analysis.
 
-Comment: "$content"
+            Comment: "$content"
 
-Provide analysis in this EXACT format:
-Sentiment: [positive/negative/neutral]
-Intent: [sales/support/complaint/question/lead/general]
-IsLead: [YES/NO]
-Score: [0-100]
+            Provide analysis in this EXACT format:
+            Sentiment: [positive/negative/neutral]
+            Intent: [sales/support/complaint/question/lead/general]
+            IsLead: [YES/NO]
+            Score: [0-100]
 
-Analysis:
-PROMPT;
+            Analysis:
+            PROMPT;
     }
 
     /**
@@ -204,14 +204,14 @@ PROMPT;
         }
 
         return <<<PROMPT
-You are a customer service representative for a financial services company. 
-Write a helpful, professional response to this comment. Keep it brief (1-2 sentences).
+            You are a customer service representative for a financial services company. 
+            Write a helpful, professional response to this comment. Keep it brief (1-2 sentences).
 
-Comment from $authorName: "$commentContent"
-$knowledge
+            Comment from $authorName: "$commentContent"
+            $knowledge
 
-Response (professional and helpful):
-PROMPT;
+            Response (professional and helpful):
+            PROMPT;
     }
 
     /**

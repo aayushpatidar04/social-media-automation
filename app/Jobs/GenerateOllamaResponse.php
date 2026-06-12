@@ -89,7 +89,7 @@ class GenerateOllamaResponse implements ShouldQueue
             // For now, return empty - you can implement RAG here
             
             $knowledge = \App\Models\KnowledgeSource::where('organization_id', $comment->organization_id)
-                ->where('is_active', true)
+                // ->where('is_active', true)
                 ->limit(3)
                 ->get()
                 ->pluck('content')
