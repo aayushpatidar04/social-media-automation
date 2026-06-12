@@ -5,6 +5,7 @@
 namespace App\Services;
 
 use App\Jobs\AnalyzeCommentWithAI;
+use App\Jobs\AnalyzeWithOllama;
 use App\Models\SocialAccount;
 use App\Models\SocialComment;
 use App\Models\SocialPost;
@@ -62,7 +63,8 @@ class InstagramService
 
                 $totalComments++;
 
-                AnalyzeCommentWithAI::dispatch($storedComment);
+                // AnalyzeCommentWithAI::dispatch($storedComment);
+                AnalyzeWithOllama::dispatch($storedComment);
             }
         }
 

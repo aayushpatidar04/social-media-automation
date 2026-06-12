@@ -5,6 +5,7 @@
 namespace App\Services;
 
 use App\Jobs\AnalyzeCommentWithAI;
+use App\Jobs\AnalyzeWithOllama;
 use App\Models\SocialAccount;
 use App\Models\SocialComment;
 use App\Models\SocialPost;
@@ -170,7 +171,8 @@ class FacebookService
                     $totalComments++;
 
                     // Dispatch AI analysis job
-                    AnalyzeCommentWithAI::dispatch($storedComment);
+                    // AnalyzeCommentWithAI::dispatch($storedComment);
+                    AnalyzeWithOllama::dispatch($storedComment);
                 }
             }
 
