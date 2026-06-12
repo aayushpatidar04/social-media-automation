@@ -8,6 +8,7 @@ use App\Http\Controllers\FacebookAuthController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\KnowledgeBaseController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\YoutubeController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -224,6 +225,22 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('/{source}', [KnowledgeBaseController::class, 'delete'])
             ->name('delete');
     });
+
+    // ============================================
+    // YouTUBE OAUTH & SYNC ROUTES
+    // ============================================
+
+    Route::get('/auth/youtube/login', [YoutubeController::class, 'login'])
+        ->name('youtube.login');
+
+    Route::get('/auth/youtube/callback', [YoutubeController::class, 'callback'])
+        ->name('youtube.callback');
+
+    Route::post('/settings/social-accounts/{account}/youtube-sync', [YoutubeController::class, 'sync'])
+        ->name('youtube.sync');
+
+    Route::post('/youtube/comments/{comment}/reply', [YoutubeController::class, 'reply'])
+        ->name('youtube.comment.reply');
 
 });
 

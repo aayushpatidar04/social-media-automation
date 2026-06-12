@@ -3,10 +3,15 @@
         <div class="max-w-4xl mx-auto">
             <div class="flex justify-between items-center mb-8">
                 <h1 class="text-3xl font-bold text-white">Social Accounts</h1>
-                <a :href="facebookLoginUrl"
-                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
-                    + Connect Facebook
-                </a>
+                <div class="flex gap-4">
+                    <a :href="facebookLoginUrl"
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
+                        + Connect Facebook
+                    </a>
+                    <a :href="youtubeLoginUrl" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium">
+                        + Connect YouTube
+                    </a>
+                </div>
             </div>
 
             <!-- Connected Accounts -->
@@ -78,6 +83,7 @@ const props = defineProps({
 })
 
 const facebookLoginUrl = ref(props.facebook_login_url || '#')
+const youtubeLoginUrl = '/auth/youtube/login'
 
 const syncNow = async (accountId) => {
     try {

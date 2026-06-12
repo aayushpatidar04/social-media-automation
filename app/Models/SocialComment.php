@@ -34,8 +34,6 @@ class SocialComment extends Model
         'ai_error_message',
         'ai_analysis_completed_at',
         'ai_response_text',
-
-
     ];
 
     protected $casts = [
