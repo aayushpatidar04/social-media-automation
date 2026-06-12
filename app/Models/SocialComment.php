@@ -28,7 +28,14 @@ class SocialComment extends Model
         'status',
         'is_flagged',
         'flag_reason',
-        'commented_at'
+        'commented_at',
+        'intent_confidence',
+        'ai_analysis_failed',
+        'ai_error_message',
+        'ai_analysis_completed_at',
+        'ai_response_text',
+
+
     ];
 
     protected $casts = [
