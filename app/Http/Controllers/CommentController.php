@@ -10,6 +10,7 @@ use App\Services\FacebookService;
 use App\Services\RAGService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 class CommentController extends Controller
@@ -19,7 +20,7 @@ class CommentController extends Controller
      */
     public function inbox(Request $request)
     {
-        $organization = auth()->user()->organization;
+        $organization = Auth::user()->organization;
 
         $query = $organization->socialComments()
             ->with(['socialAccount', 'socialPost', 'aiConversation'])
@@ -63,7 +64,7 @@ class CommentController extends Controller
      */
     public function filter(Request $request)
     {
-        $organization = auth()->user()->organization;
+        $organization = Auth::user()->organization;
 
         $query = $organization->socialComments()
             ->with(['socialAccount', 'socialPost', 'aiConversation'])
@@ -100,7 +101,7 @@ class CommentController extends Controller
      */
     public function show(SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -121,7 +122,7 @@ class CommentController extends Controller
      */
     public function getAiConversation(SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -161,7 +162,7 @@ class CommentController extends Controller
      */
     public function sendReply(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -196,7 +197,7 @@ class CommentController extends Controller
                 // Update existing
                 $aiConversation->update([
                     'response_status' => 'approved',
-                    'approved_by_user_id' => auth()->id(),
+                    'approved_by_user_id' => Auth::id(),
                     'approved_at' => now(),
                     'is_ai_response' => $validated['is_ai_response'] ?? false,
                 ]);
@@ -206,12 +207,12 @@ class CommentController extends Controller
                 $aiConversation = AiConversation::create([
                     'organization_id' => $comment->organization_id,
                     'social_comment_id' => $comment->id,
-                    'user_id' => auth()->id(),
+                    'user_id' => Auth::id(),
                     'ai_response' => $validated['message'],
                     'response_status' => 'approved',
                     'confidence' => 1.0,
                     'is_ai_response' => false,  # This was manual
-                    'approved_by_user_id' => auth()->id(),
+                    'approved_by_user_id' => Auth::id(),
                     'approved_at' => now(),
                 ]);
                 Log::info('Created new AI conversation (manual): ' . $aiConversation->id);
@@ -228,7 +229,7 @@ class CommentController extends Controller
             // Log activity
             \App\Models\ActivityLog::create([
                 'organization_id' => $comment->organization_id,
-                'user_id' => auth()->id(),
+                'user_id' => Auth::id(),
                 'action' => 'comment_replied',
                 'entity_type' => 'social_comment',
                 'entity_id' => $comment->id,
@@ -256,7 +257,7 @@ class CommentController extends Controller
      */
     public function approveAIResponse(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -288,7 +289,7 @@ class CommentController extends Controller
             // Update conversation
             $aiConversation->update([
                 'response_status' => 'approved',
-                'approved_by_user_id' => auth()->id(),
+                'approved_by_user_id' => Auth::id(),
                 'approved_at' => now(),
             ]);
 
@@ -318,7 +319,7 @@ class CommentController extends Controller
      */
     public function rejectAIResponse(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -338,7 +339,7 @@ class CommentController extends Controller
             $aiConversation->update([
                 'response_status' => 'rejected',
                 'rejection_reason' => $validated['reason'] ?? null,
-                'rejected_by_user_id' => auth()->id(),
+                'rejected_by_user_id' => Auth::id(),
                 'rejected_at' => now(),
             ]);
 
@@ -360,7 +361,7 @@ class CommentController extends Controller
      */
     public function markAsResponded(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -387,7 +388,7 @@ class CommentController extends Controller
      */
     public function markAsReviewed(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== auth()->user()->organization_id) {
+        if ($comment->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
