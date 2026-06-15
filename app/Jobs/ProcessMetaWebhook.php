@@ -92,8 +92,8 @@ class ProcessMetaWebhook implements ShouldQueue
         $account = SocialAccount::where('platform', 'facebook')
             ->where('is_active', true)
             ->where(function ($query) use ($instagramAccountId) {
-                $query->where('instagram_account_id', $instagramAccountId)
-                    ->orWhereJsonContains('metadata->instagram_account_id', $instagramAccountId);
+                $query->where('platform_account_id', $instagramAccountId)
+                    ->orWhereJsonContains('metadata->platform_account_id', $instagramAccountId);
             })
             ->first();
 
