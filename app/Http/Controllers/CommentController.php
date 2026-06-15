@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\SocialComment;
 use App\Models\AiConversation;
 use App\Services\FacebookService;
+use App\Services\InstagramService;
 use App\Services\RAGService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -412,8 +413,10 @@ class CommentController extends Controller
                 return $service->publishReply($comment, $message, $account);
             }
 
-            // Add Instagram here when ready
-            // if ($comment->platform === 'instagram') { ... }
+            if ($comment->platform === 'instagram') {
+                $service = new InstagramService();
+                return $service->publishReply($comment, $message, $account);
+            }
 
             Log::warning('Unknown platform: ' . $comment->platform);
             return false;

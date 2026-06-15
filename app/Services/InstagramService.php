@@ -157,4 +157,38 @@ class InstagramService
 
         return $data['data'] ?? [];
     }
+
+    /**
+     * Publish a reply to an Instagram comment
+     */
+    public function publishReply(SocialComment $comment, string $message, SocialAccount $account): bool
+    {
+        try {
+            $response = Http::post(
+                "https://graph.facebook.com/{$this->graphVersion}/{$comment->platform_comment_id}/replies",
+                [
+                    'message' => $message,
+                    'access_token' => $account->access_token,
+                ]
+            );
+
+            $data = $response->json();
+
+            if (!$response->successful() || isset($data['error'])) {
+                Log::error('Instagram publish reply failed', $data);
+                return false;
+            }
+
+            $comment->update([
+                'status' => 'replied',
+                'ai_response_text' => $message,
+                'replied_at' => now(),
+            ]);
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Instagram publish reply exception: ' . $e->getMessage());
+            return false;
+        }
+    }
 }
