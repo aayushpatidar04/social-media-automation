@@ -141,9 +141,11 @@ class YoutubeService
                     ]
                 );
 
-                $totalComments++;
+                if ($storedComment->wasRecentlyCreated) {
+                    $totalComments++;
+                    \App\Jobs\AnalyzeWithOllama::dispatch($storedComment);
+                }
 
-                \App\Jobs\AnalyzeWithOllama::dispatch($storedComment);
             }
         }
 

@@ -5,9 +5,10 @@ use App\Http\Controllers\CommentController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\FacebookAuthController;
+use App\Http\Controllers\KnowledgeBaseController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\LinkedInController;
-use App\Http\Controllers\KnowledgeBaseController;
+use App\Http\Controllers\MetaWebhookController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\TwitterController;
 use App\Http\Controllers\YoutubeController;
@@ -348,5 +349,7 @@ if (!function_exists('verifyFacebookSignature')) {
         return hash_equals($expectedSignature, $hubSignature);
     }
 }
+
+Route::match(['get', 'post'], '/webhooks/meta', [MetaWebhookController::class, 'handle']);
 
 require __DIR__ . '/auth.php';

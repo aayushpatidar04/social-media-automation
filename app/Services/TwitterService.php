@@ -159,9 +159,11 @@ class TwitterService
                 ]
             );
 
-            $total++;
+            if ($storedComment->wasRecentlyCreated) {
+                $total++;
+                \App\Jobs\AnalyzeWithOllama::dispatch($storedComment);
+            }
 
-            \App\Jobs\AnalyzeWithOllama::dispatch($storedComment);
         }
 
         $account->update(['last_synced_at' => now()]);

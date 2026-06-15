@@ -1,6 +1,6 @@
 <template>
     <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-slate-800 border border-slate-700 rounded-lg max-w-2xl w-full max-h-96 overflow-y-auto">
+        <div class="bg-slate-800 border border-slate-700 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto hide-scrollbar">
             <!-- Header -->
             <div class="bg-slate-700 border-b border-slate-600 p-6 sticky top-0">
                 <div class="flex items-start justify-between">

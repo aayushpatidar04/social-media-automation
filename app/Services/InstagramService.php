@@ -61,10 +61,12 @@ class InstagramService
                     ]
                 );
 
-                $totalComments++;
+                if ($storedComment->wasRecentlyCreated) {
+                    $totalComments++;
+                    // AnalyzeCommentWithAI::dispatch($storedComment);
+                    AnalyzeWithOllama::dispatch($storedComment);
+                }
 
-                // AnalyzeCommentWithAI::dispatch($storedComment);
-                AnalyzeWithOllama::dispatch($storedComment);
             }
         }
 
@@ -190,5 +192,77 @@ class InstagramService
             Log::error('Instagram publish reply exception: ' . $e->getMessage());
             return false;
         }
+    }
+
+    public function syncSingleCommentFromWebhook(SocialAccount $account, string $commentId): ?SocialComment
+    {
+        $comment = $this->getSingleInstagramComment($account, $commentId);
+
+        if (!$comment) {
+            return null;
+        }
+
+        $mediaId = $comment['media']['id'] ?? null;
+
+        $storedPost = SocialPost::firstOrCreate(
+            [
+                'platform_post_id' => $mediaId ?: 'unknown_' . $commentId,
+                'platform' => 'instagram',
+            ],
+            [
+                'organization_id' => $account->organization_id,
+                'social_account_id' => $account->id,
+                'content' => '',
+                'posted_at' => now(),
+            ]
+        );
+
+        $storedComment = SocialComment::updateOrCreate(
+            [
+                'platform_comment_id' => $comment['id'],
+                'platform' => 'instagram',
+            ],
+            [
+                'organization_id' => $account->organization_id,
+                'social_account_id' => $account->id,
+                'social_post_id' => $storedPost->id,
+                'author_name' => $comment['username'] ?? 'Unknown',
+                'platform_author_id' => $comment['username'] ?? null,
+                'content' => $comment['text'] ?? '',
+                'commented_at' => $comment['timestamp'] ?? now(),
+            ]
+        );
+
+        if ($storedComment->wasRecentlyCreated) {
+            $storedComment->update(['status' => 'new']);
+
+            \App\Jobs\AnalyzeWithOllama::dispatch($storedComment);
+        }
+
+        return $storedComment;
+    }
+
+    private function getSingleInstagramComment(SocialAccount $account, string $commentId): ?array
+    {
+        $response = Http::get(
+            "https://graph.facebook.com/{$this->graphVersion}/{$commentId}",
+            [
+                'fields' => 'id,text,username,timestamp,media',
+                'access_token' => $account->access_token,
+            ]
+        );
+
+        $data = $response->json();
+
+        if (!$response->successful()) {
+            Log::error('Instagram single comment fetch failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            return null;
+        }
+
+        return $data;
     }
 }

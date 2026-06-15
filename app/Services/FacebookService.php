@@ -168,11 +168,12 @@ class FacebookService
                         ]
                     );
 
-                    $totalComments++;
-
-                    // Dispatch AI analysis job
-                    // AnalyzeCommentWithAI::dispatch($storedComment);
-                    AnalyzeWithOllama::dispatch($storedComment);
+                    if ($storedComment->wasRecentlyCreated) {
+                        $totalComments++;
+                        // Dispatch AI analysis job
+                        // AnalyzeCommentWithAI::dispatch($storedComment);
+                        AnalyzeWithOllama::dispatch($storedComment);
+                    }
                 }
             }
 
@@ -378,5 +379,82 @@ class FacebookService
         $expectedSignature = 'sha1=' . hash_hmac('sha1', $body, $appSecret);
 
         return hash_equals($expectedSignature, $hubSignature);
+    }
+
+    public function syncSingleCommentFromWebhook(SocialAccount $account, array $value): ?SocialComment
+    {
+        $commentId = $value['comment_id'] ?? null;
+        $postId = $value['post_id'] ?? null;
+
+        if (!$commentId || !$postId) {
+            return null;
+        }
+
+        $comment = $this->getSingleFacebookComment($account, $commentId);
+
+        if (!$comment) {
+            return null;
+        }
+
+        $storedPost = SocialPost::firstOrCreate(
+            [
+                'platform_post_id' => $postId,
+                'platform' => 'facebook',
+            ],
+            [
+                'organization_id' => $account->organization_id,
+                'social_account_id' => $account->id,
+                'content' => '',
+                'posted_at' => now(),
+            ]
+        );
+
+        $storedComment = SocialComment::updateOrCreate(
+            [
+                'platform_comment_id' => $comment['id'],
+                'platform' => 'facebook',
+            ],
+            [
+                'organization_id' => $account->organization_id,
+                'social_account_id' => $account->id,
+                'social_post_id' => $storedPost->id,
+                'author_name' => $comment['from']['name'] ?? 'Unknown',
+                'platform_author_id' => $comment['from']['id'] ?? null,
+                'content' => $comment['message'] ?? '',
+                'commented_at' => $comment['created_time'] ?? now(),
+            ]
+        );
+
+        if ($storedComment->wasRecentlyCreated) {
+            $storedComment->update(['status' => 'new']);
+
+            \App\Jobs\AnalyzeWithOllama::dispatch($storedComment);
+        }
+
+        return $storedComment;
+    }
+
+    private function getSingleFacebookComment(SocialAccount $account, string $commentId): ?array
+    {
+        $response = Http::get(
+            "https://graph.facebook.com/{$this->graphVersion}/{$commentId}",
+            [
+                'fields' => 'id,message,created_time,from',
+                'access_token' => $account->access_token,
+            ]
+        );
+
+        $data = $response->json();
+
+        if (!$response->successful()) {
+            Log::error('Facebook single comment fetch failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            return null;
+        }
+
+        return $data;
     }
 }
