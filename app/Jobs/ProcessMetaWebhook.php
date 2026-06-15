@@ -12,6 +12,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class ProcessMetaWebhook implements ShouldQueue
@@ -89,13 +90,7 @@ class ProcessMetaWebhook implements ShouldQueue
 
         $instagramAccountId = $entry['id'] ?? null;
 
-        $account = SocialAccount::where('platform', 'facebook')
-            ->where('is_active', true)
-            ->where(function ($query) use ($instagramAccountId) {
-                $query->where('platform_account_id', $instagramAccountId)
-                    ->orWhereJsonContains('metadata->platform_account_id', $instagramAccountId);
-            })
-            ->first();
+        $account = $this->findFacebookAccountByInstagramId($instagramAccountId);
 
         if (!$account) {
             Log::warning('Instagram webhook account not found', [
@@ -106,5 +101,34 @@ class ProcessMetaWebhook implements ShouldQueue
         }
 
         app(InstagramService::class)->syncSingleCommentFromWebhook($account, $commentId);
+    }
+
+    private function findFacebookAccountByInstagramId(string $instagramAccountId): ?SocialAccount
+    {
+        $facebookAccounts = SocialAccount::where('platform', 'facebook')
+            ->where('is_active', true)
+            ->get();
+
+        foreach ($facebookAccounts as $account) {
+            $pageId = $account->platform_account_id;
+            $pageToken = $account->access_token;
+
+            $response = Http::get("https://graph.facebook.com/v18.0/{$pageId}", [
+                'fields' => 'connected_instagram_account',
+                'access_token' => $pageToken,
+            ]);
+
+            if (!$response->successful()) {
+                continue;
+            }
+
+            $connectedInstagramId = data_get($response->json(), 'connected_instagram_account.id');
+
+            if ($connectedInstagramId == $instagramAccountId) {
+                return $account;
+            }
+        }
+
+        return null;
     }
 }
