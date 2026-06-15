@@ -16,17 +16,17 @@ class SocialCommentPolicy
  
     public function view(User $user, SocialComment $comment)
     {
-        return $user->organization_id === $comment->organization_id;
+        return $user->organization_id === $comment->socialAccount->organization_id;
     }
  
     public function update(User $user, SocialComment $comment)
     {
-        return $user->organization_id === $comment->organization_id;
+        return $user->organization_id === $comment->socialAccount->organization_id;
     }
  
     public function delete(User $user, SocialComment $comment)
     {
-        return $user->organization_id === $comment->organization_id 
+        return $user->organization_id === $comment->socialAccount->organization_id 
             && in_array($user->role, ['admin', 'manager']);
     }
 }

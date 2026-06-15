@@ -121,7 +121,7 @@ class LinkedInController extends Controller
             'message' => 'required|string|max:1250',
         ]);
 
-        if ($comment->organization_id !== Auth::user()->organization_id) {
+        if ($comment->socialAccount->organization_id !== Auth::user()->organization_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

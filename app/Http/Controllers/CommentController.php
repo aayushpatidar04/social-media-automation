@@ -101,7 +101,7 @@ class CommentController extends Controller
      */
     public function show(SocialComment $comment)
     {
-        if ($comment->organization_id !== Auth::user()->organization_id) {
+        if ($comment->socialAccount->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -122,7 +122,7 @@ class CommentController extends Controller
      */
     public function getAiConversation(SocialComment $comment)
     {
-        if ($comment->organization_id !== Auth::user()->organization_id) {
+        if ($comment->socialAccount->organization_id !== Auth::user()->organization_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -162,7 +162,7 @@ class CommentController extends Controller
      */
     public function sendReply(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== Auth::user()->organization_id) {
+        if ($comment->socialAccount->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -205,7 +205,7 @@ class CommentController extends Controller
             } else {
                 // Create new (manual reply)
                 $aiConversation = AiConversation::create([
-                    'organization_id' => $comment->organization_id,
+                    'organization_id' => $comment->socialAccount->organization_id,
                     'social_comment_id' => $comment->id,
                     'user_id' => Auth::id(),
                     'ai_response' => $validated['message'],
@@ -228,7 +228,7 @@ class CommentController extends Controller
 
             // Log activity
             \App\Models\ActivityLog::create([
-                'organization_id' => $comment->organization_id,
+                'organization_id' => $comment->socialAccount->organization_id,
                 'user_id' => Auth::id(),
                 'action' => 'comment_replied',
                 'entity_type' => 'social_comment',
@@ -257,7 +257,7 @@ class CommentController extends Controller
      */
     public function approveAIResponse(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== Auth::user()->organization_id) {
+        if ($comment->socialAccount->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -319,7 +319,7 @@ class CommentController extends Controller
      */
     public function rejectAIResponse(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== Auth::user()->organization_id) {
+        if ($comment->socialAccount->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -361,7 +361,7 @@ class CommentController extends Controller
      */
     public function markAsResponded(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== Auth::user()->organization_id) {
+        if ($comment->socialAccount->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
@@ -388,7 +388,7 @@ class CommentController extends Controller
      */
     public function markAsReviewed(Request $request, SocialComment $comment)
     {
-        if ($comment->organization_id !== Auth::user()->organization_id) {
+        if ($comment->socialAccount->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
 
