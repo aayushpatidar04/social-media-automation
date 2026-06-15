@@ -132,6 +132,7 @@ const sendReply = async () => {
             },
             body: JSON.stringify({
                 message: message.trim(),
+                is_ai_response: sendType.value === 'ai',
             }),
         })
 
