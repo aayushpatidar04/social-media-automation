@@ -251,7 +251,7 @@ class FacebookService
     public function publishReply(SocialComment $comment, string $message, SocialAccount $account): bool
     {
         try {
-            $url = "https://graph.facebook.com/{$this->graphVersion}/" . $comment->platform_comment_id . "/private_replies?" .
+            $url = "https://graph.facebook.com/{$this->graphVersion}/" . $comment->platform_comment_id . "/comments?" .
                 "message=" . urlencode($message) . "&" .
                 "access_token=" . $account->access_token;
 
