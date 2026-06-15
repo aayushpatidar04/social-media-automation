@@ -1,0 +1,1 @@
+import{A as e,E as t,N as n,O as r,_ as i,n as a}from"./app-lpCoMKTR.js";var o={__name:`Link`,props:{href:{type:String,required:!0},as:{type:String,default:`a`}},setup(o){return(s,c)=>(t(),i(n(a),{href:o.href,as:o.as,class:`text-blue-400 hover:text-blue-300 transition-colors`},{default:e(()=>[r(s.$slots,`default`)]),_:3},8,[`href`,`as`]))}};export{o as t};
