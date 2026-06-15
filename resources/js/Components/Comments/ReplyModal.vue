@@ -36,16 +36,19 @@
                 <!-- Options -->
                 <div class="space-y-2">
                     <label class="flex items-center gap-3 p-3 bg-slate-700 rounded cursor-pointer hover:bg-slate-600">
-                        <input type="radio" v-model="sendType" value="manual" class="w-4 h-4" />
+                        <input type="radio" v-model="sendType" value="manual" class="w-4 h-4"
+                            @change="replyMessage = ''" />
                         <span class="text-white text-sm">Send reply manually</span>
                     </label>
 
                     <label v-if="comment.ai_response_text"
                         class="flex items-center gap-3 p-3 bg-slate-700 rounded cursor-pointer hover:bg-slate-600">
-                        <input type="radio" v-model="sendType" value="ai" class="w-4 h-4" />
+                        <input type="radio" v-model="sendType" value="ai" class="w-4 h-4"
+                            @change="replyMessage = comment.ai_response_text" />
                         <span class="text-white text-sm">Use AI suggested response</span>
                     </label>
                 </div>
+
             </div>
 
             <!-- Footer -->
@@ -80,24 +83,68 @@ const replyMessage = ref('')
 const sendType = ref('manual')
 const sending = ref(false)
 
+const getReplyUrl = (comment) => {
+    const platform = comment.platform
+
+    switch (platform) {
+        case 'facebook':
+        case 'instagram':
+            return `/inbox/${comment.id}/reply`
+
+        case 'youtube':
+            return `/youtube/comments/${comment.id}/reply`
+
+        case 'twitter':
+            return `/twitter/comments/${comment.id}/reply`
+
+        case 'linkedin':
+            return `/linkedin/comments/${comment.id}/reply`
+
+        default:
+            throw new Error(`Unsupported platform: ${platform}`)
+    }
+}
+
 const sendReply = async () => {
     sending.value = true
-    try {
-        const message = sendType.value === 'ai' ? props.comment.ai_response_text : replyMessage.value
 
-        const response = await fetch(`/inbox/${props.comment.id}/reply`, {
+    try {
+        const message =
+            sendType.value === 'ai'
+                ? props.comment.ai_response_text
+                : replyMessage.value
+
+        if (!message || !message.trim()) {
+            console.error('Reply message is empty')
+            return
+        }
+
+        const url = getReplyUrl(props.comment)
+
+        const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': document
+                    .querySelector('meta[name="csrf-token"]')
+                    .content,
             },
-            body: JSON.stringify({ message }),
+            body: JSON.stringify({
+                message: message.trim(),
+            }),
         })
 
-        if (response.ok) {
-            emit('sent')
-            emit('close')
+        const data = await response.json().catch(() => null)
+
+        if (!response.ok) {
+            console.error('Reply failed:', data || response.statusText)
+            return
         }
+
+        emit('sent', data)
+        emit('close')
+
     } catch (error) {
         console.error('Error sending reply:', error)
     } finally {
