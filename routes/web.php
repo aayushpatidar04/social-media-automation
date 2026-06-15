@@ -6,6 +6,7 @@ use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\FacebookAuthController;
 use App\Http\Controllers\LeadController;
+use App\Http\Controllers\LinkedInController;
 use App\Http\Controllers\KnowledgeBaseController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\TwitterController;
@@ -252,6 +253,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/auth/twitter/callback', [TwitterController::class, 'callback'])->name('twitter.callback');
 
     Route::post('/settings/social-accounts/{account}/twitter-sync', [TwitterController::class, 'sync'])->name('twitter.sync');
+
+    // ============================================
+    // LinkedIn OAUTH & SYNC ROUTES
+    // ============================================
+
+    Route::get('/auth/linkedin/login', [LinkedInController::class, 'login'])->name('linkedin.login');
+
+    Route::get('/auth/linkedin/callback', [LinkedInController::class, 'callback'])->name('linkedin.callback');
+
+    Route::post('/settings/social-accounts/{account}/linkedin-sync', [LinkedInController::class, 'sync'])->name('linkedin.sync');
+
+    Route::post('/linkedin/comments/{comment}/reply', [LinkedInController::class, 'reply'])->name('linkedin.comment.reply');
 
 });
 

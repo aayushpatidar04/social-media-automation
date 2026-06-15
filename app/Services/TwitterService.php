@@ -14,7 +14,7 @@ class TwitterService
 
     public function __construct()
     {
-        $this->baseUrl = env('TWITTER_API_BASE', 'https://api.twitter.com/2');
+        $this->baseUrl = env('TWITTER_API_BASE', 'https://api.x.com/2');
     }
 
     public function generateCodeVerifier(): string
@@ -39,14 +39,14 @@ class TwitterService
             'code_challenge_method' => 'S256',
         ]);
 
-        return "https://twitter.com/i/oauth2/authorize?{$params}";
+        return "https://x.com/i/oauth2/authorize?{$params}";
     }
 
     public function exchangeCodeForToken(string $code, string $codeVerifier): array
     {
         $response = Http::asForm()
             ->withBasicAuth(env('TWITTER_CLIENT_ID'), env('TWITTER_CLIENT_SECRET'))
-            ->post('https://api.twitter.com/2/oauth2/token', [
+            ->post('https://api.x.com/2/oauth2/token', [
                 'code' => $code,
                 'grant_type' => 'authorization_code',
                 'client_id' => env('TWITTER_CLIENT_ID'),
@@ -71,7 +71,7 @@ class TwitterService
 
         $response = Http::asForm()
             ->withBasicAuth(env('TWITTER_CLIENT_ID'), env('TWITTER_CLIENT_SECRET'))
-            ->post('https://api.twitter.com/2/oauth2/token', [
+            ->post('https://api.x.com/2/oauth2/token', [
                 'refresh_token' => $account->refresh_token,
                 'grant_type' => 'refresh_token',
                 'client_id' => env('TWITTER_CLIENT_ID'),
