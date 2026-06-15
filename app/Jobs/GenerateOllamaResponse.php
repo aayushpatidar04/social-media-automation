@@ -59,20 +59,25 @@ class GenerateOllamaResponse implements ShouldQueue
                 'social_comment_id' => $this->comment->id,
                 'social_account_id' => $this->comment->social_account_id,
                 'ai_response' => $response,
-                'response_status' => 'pending', // Waiting for human approval
-                'confidence_score' => $this->comment->intent_confidence ?? 80, // Use confidence from analysis
+                'response_status' => 'pending',
+                'confidence_score' => $this->comment->intent_confidence ?? 80,
                 'model_used' => 'ollama_gemma2',
             ]);
 
             Log::info('✅ AI conversation stored: ' . $aiConversation->id);
 
-            // Update comment with the generated response
+            // Update comment with the generated response text only.
+            // Actual reply is sent automatically by PublishAutoReply.
             $this->comment->update([
                 'ai_response_text' => $response,
-                'status' => 'pending_approval',
             ]);
 
-            Log::info('✅ Comment status updated to pending_approval');
+            Log::info('✅ Comment updated with AI response text');
+
+            // Queue the auto-reply publish job immediately.
+            PublishAutoReply::dispatch($this->comment);
+
+            Log::info('✅ Auto reply dispatch queued for comment: ' . $this->comment->id);
 
         } catch (\Exception $e) {
             Log::error('❌ Error generating response: ' . $e->getMessage());

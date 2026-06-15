@@ -4,6 +4,7 @@ namespace App\Jobs;
  
 use App\Models\SocialComment;
 use App\Services\FacebookService;
+use App\Services\InstagramService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -33,12 +34,25 @@ class PublishAutoReply implements ShouldQueue
                 return;
             }
  
-            $service = new FacebookService($this->comment->socialAccount);
+            $service = null;
+
+            if ($this->comment->platform === 'facebook') {
+                $service = new FacebookService();
+            } elseif ($this->comment->platform === 'instagram') {
+                $service = new InstagramService();
+            }
+
+            if (! $service) {
+                Log::warning('Auto reply not supported for platform: ' . $this->comment->platform);
+                return;
+            }
+
             $success = $service->publishReply(
                 $this->comment,
-                $aiConversation->ai_response
+                $aiConversation->ai_response,
+                $this->comment->socialAccount
             );
- 
+
             if ($success) {
                 $aiConversation->update([
                     'response_status' => 'auto_sent',
@@ -56,10 +70,12 @@ class PublishAutoReply implements ShouldQueue
             Log::error("Publish Reply Error: " . $e->getMessage());
             
             // Update error status
-            $this->comment->aiConversation()->update([
-                'send_status' => 'failed',
-                'send_error_message' => $e->getMessage(),
-            ]);
+            if ($this->comment->aiConversation()) {
+                $this->comment->aiConversation()->update([
+                    'send_status' => 'failed',
+                    'send_error_message' => $e->getMessage(),
+                ]);
+            }
  
             $this->fail($e);
         }

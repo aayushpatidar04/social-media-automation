@@ -415,7 +415,6 @@ class FacebookService
                 'platform' => 'facebook',
             ],
             [
-                'organization_id' => $account->organization_id,
                 'social_account_id' => $account->id,
                 'social_post_id' => $storedPost->id,
                 'author_name' => $comment['from']['name'] ?? 'Unknown',
