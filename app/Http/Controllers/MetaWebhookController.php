@@ -10,6 +10,7 @@ class MetaWebhookController extends Controller
 {
     public function handle(Request $request)
     {
+        Log::info($request->all());
         if ($request->isMethod('get')) {
             return $this->verify($request);
         }
