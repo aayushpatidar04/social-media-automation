@@ -31,7 +31,7 @@ class SyncSocialCommentsJob implements ShouldQueue
     ): void {
         $account = SocialAccount::find($this->accountId);
 
-        if (!$account || $account->status !== 'active') {
+        if (!$account || $account->status !== 'connected') {
             return;
         }
 
