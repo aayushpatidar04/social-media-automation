@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\ProcessMetaWebhook;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use App\Models\SocialAccount;
 
 class MetaWebhookController extends Controller
 {
