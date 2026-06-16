@@ -8,10 +8,11 @@ use Illuminate\Console\Command;
 use App\Models\SocialAccount;
 use App\Jobs\SyncSocialCommentsJob;
 
-#[Signature('sync:social-cron')]
-#[Description('Command description')]
+
 class SyncSocialCron extends Command
 {
+    protected $signature = 'sync:social-cron';
+    protected $description = 'Syncing comments for Youtube, Twitter and LinkedIn';
     /**
      * Execute the console command.
      */
