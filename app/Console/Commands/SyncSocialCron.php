@@ -18,7 +18,7 @@ class SyncSocialCron extends Command
      */
     public function handle()
     {
-        SocialAccount::where('status', 'active')
+        SocialAccount::where('status', 'connected')
             ->whereIn('platform', ['youtube', 'twitter', 'linkedin'])
             ->chunk(50, function ($accounts) {
                 foreach ($accounts as $account) {
