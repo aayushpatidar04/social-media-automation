@@ -22,8 +22,7 @@ class SyncSocialCron extends Command
             ->whereIn('platform', ['youtube', 'twitter', 'linkedin'])
             ->chunk(50, function ($accounts) {
                 foreach ($accounts as $account) {
-                    SyncSocialCommentsJob::dispatch($account->id)
-                        ->onQueue('social-sync');
+                    SyncSocialCommentsJob::dispatch($account->id);
                 }
             });
 
