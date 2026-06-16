@@ -5,7 +5,7 @@ namespace App\Jobs;
 use App\Models\SocialAccount;
 use App\Services\LinkedInService;
 use App\Services\TwitterService;
-use App\Services\YouTubeService;
+use App\Services\YoutubeService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable as FoundationQueueable;
@@ -25,7 +25,7 @@ class SyncSocialCommentsJob implements ShouldQueue
     ) {}
 
     public function handle(
-        YouTubeService $youTubeService,
+        YoutubeService $youTubeService,
         TwitterService $twitterService,
         LinkedInService $linkedInService
     ): void {
