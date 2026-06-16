@@ -285,4 +285,22 @@ class LinkedInService
 
         return $data;
     }
+
+    public function publishReply(SocialComment $comment, string $message, SocialAccount $account): bool
+    {
+        try {
+            $this->replyToComment($account, $comment->platform_comment_id, $message);
+
+            $comment->update([
+                'status' => 'replied',
+                'ai_response_text' => $message,
+                'replied_at' => now(),
+            ]);
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error('LinkedIn publish reply exception: ' . $e->getMessage());
+            return false;
+        }
+    }
 }

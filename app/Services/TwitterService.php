@@ -226,4 +226,22 @@ class TwitterService
 
         return $data;
     }
+
+    public function publishReply(SocialComment $comment, string $message, SocialAccount $account): bool
+    {
+        try {
+            $this->replyToTweet($account, $comment->platform_comment_id, $message);
+
+            $comment->update([
+                'status' => 'replied',
+                'ai_response_text' => $message,
+                'replied_at' => now(),
+            ]);
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Twitter publish reply exception: ' . $e->getMessage());
+            return false;
+        }
+    }
 }

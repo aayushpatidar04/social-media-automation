@@ -5,6 +5,9 @@ namespace App\Jobs;
 use App\Models\SocialComment;
 use App\Services\FacebookService;
 use App\Services\InstagramService;
+use App\Services\TwitterService;
+use App\Services\YoutubeService;
+use App\Services\LinkedInService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -40,6 +43,12 @@ class PublishAutoReply implements ShouldQueue
                 $service = new FacebookService();
             } elseif ($this->comment->platform === 'instagram') {
                 $service = new InstagramService();
+            } elseif ($this->comment->platform === 'twitter') {
+                $service = new TwitterService();
+            } elseif ($this->comment->platform === 'youtube') {
+                $service = new YoutubeService();
+            } elseif ($this->comment->platform === 'linkedin') {
+                $service = new LinkedInService();
             }
 
             if (! $service) {
