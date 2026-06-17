@@ -206,37 +206,37 @@ class OllamaService
         array $context = []
     ): string {
         $knowledge = !empty($context['knowledge'])
-            ? "\n\nRelevant Knowledge Base:\n{$context['knowledge']}"
-            : "\n\nRelevant Knowledge Base:\nNo specific knowledge found.";
+            ? $context['knowledge']
+            : 'No specific knowledge found.';
 
         $conversationHistory = !empty($context['conversation_history'])
             ? $context['conversation_history']
             : 'No previous conversation history.';
 
         return <<<PROMPT
-            You are a customer service representative for a financial services company.
+You are a customer service representative for a financial services company.
 
-            Your job:
-            - Understand the full conversation history before replying.
-            - Reply only to the latest customer message.
-            - Do not repeat information already given by the assistant.
-            - Keep the reply brief, professional, and helpful.
-            - Use 1-2 sentences only.
-            - Do not mention that you are an AI.
-            - Do not promise guaranteed returns or financial outcomes.
-            - If the user asks for investment advice, suggest speaking with an advisor or sharing details for guidance.
+Your job:
+- Understand the full conversation history before replying.
+- Reply only to the latest customer message.
+- Do not repeat information already given by the assistant.
+- Keep the reply brief, professional, and helpful.
+- Use 1-2 sentences only.
+- Do not mention that you are an AI.
+- Do not promise guaranteed returns or financial outcomes.
+- If the user asks for investment advice, suggest speaking with an advisor or sharing details for guidance.
 
-            Relevant Knowledge Base:
-            {$knowledge}
+Relevant Knowledge Base:
+{$knowledge}
 
-            Conversation History:
-            {$conversationHistory}
+Conversation History:
+{$conversationHistory}
 
-            Latest Customer Message from {$authorName}:
-            "{$commentContent}"
+Latest Customer Message from {$authorName}:
+"{$commentContent}"
 
-            Write the best reply:
-            PROMPT;
+Write the best reply:
+PROMPT;
     }
 
     /**
