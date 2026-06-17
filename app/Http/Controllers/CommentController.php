@@ -33,7 +33,7 @@ class CommentController extends Controller
             ])
             ->where('direction', 'inbound')
             ->where(function ($q) {
-                $q->whereColumn('id', 'root_id')
+                $q->whereColumn('social_comments.id', 'root_id')
                     ->orWhereNull('parent_id');
             });
 
