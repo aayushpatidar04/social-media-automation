@@ -287,6 +287,10 @@ class InstagramService
          */
         $isOwnComment = false;
 
+        if (!empty($comment['from']['self_ig_scoped_id'])) {
+            $isOwnComment = true;
+        }
+
         $storedComment = SocialComment::updateOrCreate(
             [
                 'platform_comment_id' => $platformCommentId,

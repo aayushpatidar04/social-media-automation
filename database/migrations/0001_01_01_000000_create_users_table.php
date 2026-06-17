@@ -101,7 +101,7 @@ return new class extends Migration
             $table->enum('intent', ['sales', 'support', 'complaint', 'question', 'general', 'lead', 'pending'])->default('pending')->index();
             $table->integer('lead_score')->default(0); // 0-100
             $table->boolean('is_lead')->default(false)->index();
-            $table->enum('status', ['new', 'reviewed', 'replied', 'dismissed', 'pending_approval'])->default('new')->index();
+            $table->enum('status', ['new', 'reviewed', 'replied', 'dismissed', 'pending_approval', 'sent'])->default('new')->index();
             $table->boolean('is_flagged')->default(false);
             $table->string('flag_reason')->nullable();
             $table->dateTime('commented_at');
