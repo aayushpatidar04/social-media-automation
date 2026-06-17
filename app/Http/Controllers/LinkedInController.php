@@ -78,6 +78,7 @@ class LinkedInController extends Controller
                         ],
                         'status' => 'connected',
                         'is_active' => true,
+                        'auto_reply_started_at' => now(),
                     ]
                 );
 

@@ -15,7 +15,7 @@ class SocialAccount extends Model
         'organization_id', 'user_id', 'platform', 'platform_account_id',
         'platform_account_name', 'platform_account_handle', 'profile_picture_url',
         'access_token', 'refresh_token', 'token_expires_at', 'platform_data',
-        'metadata', 'status', 'error_message', 'last_synced_at', 'is_active',
+        'metadata', 'status', 'error_message', 'last_synced_at', 'is_active', 'auto_reply_started_at'
     ];
  
     protected $casts = [

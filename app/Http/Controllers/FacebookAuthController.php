@@ -110,6 +110,7 @@ class FacebookAuthController extends Controller
                         'access_token' => $page['access_token'],
                         'status' => 'connected',
                         'is_active' => true,
+                        'auto_reply_started_at' => now(),
                     ]);
                     $savedCount++;
                 } else {
@@ -118,6 +119,7 @@ class FacebookAuthController extends Controller
                         'access_token' => $page['access_token'],
                         'status' => 'connected',
                         'is_active' => true,
+                        'auto_reply_started_at' => now(),
                     ]);
                     $savedCount++;
                 }
