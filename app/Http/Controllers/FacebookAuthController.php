@@ -13,6 +13,13 @@ use Illuminate\Support\Facades\Log;
 
 class FacebookAuthController extends Controller
 {
+    private string $graphVersion;
+
+    public function __construct()
+    {
+        $this->graphVersion = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
+    }
+    
     /**
      * Redirect to Facebook login
      */
@@ -20,23 +27,23 @@ class FacebookAuthController extends Controller
     {
         $appId = env('FACEBOOK_APP_ID');
         $redirectUri = env('FACEBOOK_REDIRECT_URI');
-        
+
         if (!$appId || !$redirectUri) {
             return back()->with('error', 'Facebook configuration missing. Add FACEBOOK_APP_ID and FACEBOOK_REDIRECT_URI to .env');
         }
 
         $scope = 'email,pages_manage_engagement,public_profile,pages_read_user_content,pages_read_engagement,instagram_basic,pages_manage_metadata,pages_show_list,business_management,instagram_manage_comments';
         $state = bin2hex(random_bytes(16));
-        
+
         // Store state in session for validation
         session(['facebook_oauth_state' => $state]);
 
         $url = "https://www.facebook.com/v18.0/dialog/oauth?" .
-               "client_id={$appId}" .
-               "&redirect_uri=" . urlencode($redirectUri) .
-               "&scope={$scope}" .
-               "&state={$state}" .
-               "&display=popup";
+            "client_id={$appId}" .
+            "&redirect_uri=" . urlencode($redirectUri) .
+            "&scope={$scope}" .
+            "&state={$state}" .
+            "&display=popup";
 
         return redirect($url);
     }
@@ -100,7 +107,7 @@ class FacebookAuthController extends Controller
                 $existing = SocialAccount::where('platform_account_id', $page['id'])->first();
 
                 if (!$existing) {
-                    SocialAccount::create([
+                    $account = SocialAccount::create([
                         'organization_id' => Auth::user()->organization_id,
                         'user_id' => Auth::id(),
                         'platform' => 'facebook',
@@ -121,7 +128,28 @@ class FacebookAuthController extends Controller
                         'is_active' => true,
                         'auto_reply_started_at' => now(),
                     ]);
+                    $account = $existing;
                     $savedCount++;
+                }
+
+                // 🔎 Fetch connected Instagram account
+                $igResponse = Http::get(
+                    "https://graph.facebook.com/{$this->graphVersion}/{$page['id']}",
+                    [
+                        'fields' => 'connected_instagram_account',
+                        'access_token' => $page['access_token'],
+                    ]
+                )->json();
+
+                if (!empty($igResponse['connected_instagram_account']['id'])) {
+                    $instagramId = $igResponse['connected_instagram_account']['id'];
+
+                    // Merge into metadata JSON
+                    $metadata = $account->metadata ?? [];
+                    $metadata['instagram_id'] = $instagramId;
+
+                    $account->metadata = $metadata;
+                    $account->save();
                 }
             }
 
@@ -148,10 +176,10 @@ class FacebookAuthController extends Controller
         $version = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
 
         $url = "https://graph.facebook.com/{$version}/oauth/access_token?" .
-               "client_id={$appId}" .
-               "&client_secret={$appSecret}" .
-               "&redirect_uri=" . urlencode($redirectUri) .
-               "&code={$code}";
+            "client_id={$appId}" .
+            "&client_secret={$appSecret}" .
+            "&redirect_uri=" . urlencode($redirectUri) .
+            "&code={$code}";
 
         $response = Http::get($url);
         return $response->json() ?? [];
@@ -163,10 +191,10 @@ class FacebookAuthController extends Controller
     private function getUserPages(string $accessToken): array
     {
         $version = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
-        
+
         $url = "https://graph.facebook.com/{$version}/me/accounts?" .
-               "fields=id,name,picture,access_token&" .
-               "access_token={$accessToken}";
+            "fields=id,name,picture,access_token&" .
+            "access_token={$accessToken}";
 
         $response = Http::get($url);
         $data = $response->json() ?? [];
@@ -218,7 +246,7 @@ class FacebookAuthController extends Controller
         try {
             $version = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
             $url = "https://graph.facebook.com/{$version}/me?fields=id,name,email&access_token={$token}";
-            
+
             $response = Http::get($url);
             $data = $response->json();
 
