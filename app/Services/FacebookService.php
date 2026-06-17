@@ -165,7 +165,7 @@ class FacebookService
     /**
      * Publish a reply to a comment
      */
-    public function publishReply(SocialComment $comment, string $message, SocialAccount $account): bool
+    public function publishReply(SocialComment $comment, string $message, SocialAccount $account)
     {
         try {
             $url = "https://graph.facebook.com/{$this->graphVersion}/" . $comment->platform_comment_id . "/comments?" .
@@ -181,7 +181,6 @@ class FacebookService
             }
 
             return $data;
-            return true;
         } catch (\Exception $e) {
             Log::error('Exception publishing reply: ' . $e->getMessage());
             return false;
