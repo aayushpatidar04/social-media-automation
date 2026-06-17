@@ -29,15 +29,15 @@ class MetaWebhookController extends Controller
             ]);
         }
 
-        if ($this->hasOwnFacebookPageComment($payload)) {
-            Log::info('Skipping own Facebook page comment webhook', $payload);
+        // if ($this->hasOwnFacebookPageComment($payload)) {
+        //     Log::info('Skipping own Facebook page comment webhook', $payload);
 
-            return response()->json([
-                'success' => true,
-                'skipped' => true,
-                'reason' => 'own_facebook_page_comment',
-            ]);
-        }
+        //     return response()->json([
+        //         'success' => true,
+        //         'skipped' => true,
+        //         'reason' => 'own_facebook_page_comment',
+        //     ]);
+        // }
 
         ProcessMetaWebhook::dispatch($request->all());
 

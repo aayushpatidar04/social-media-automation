@@ -22,10 +22,12 @@ class SocialPost extends Model
         'comments_count',
         'media_urls',
         'posted_at',
-        'fetched_at'
+        'fetched_at',
+        'raw_payload'
     ];
 
     protected $casts = [
+        'raw_payload' => 'array',
         'posted_at' => 'datetime',
         'fetched_at' => 'datetime',
         'media_urls' => 'array',

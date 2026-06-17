@@ -24,39 +24,61 @@ class CommentController extends Controller
         $organization = Auth::user()->organization;
 
         $query = $organization->socialComments()
-            ->with(['socialAccount', 'socialPost', 'aiConversation'])
-            ->latest('commented_at');
+            ->with([
+                'socialAccount',
+                'socialPost',
+                'aiConversation',
+                'threadReplies.aiConversation',
+                'threadReplies.socialAccount',
+            ])
+            ->where('direction', 'inbound')
+            ->where(function ($q) {
+                $q->whereColumn('id', 'root_id')
+                    ->orWhereNull('parent_id');
+            });
 
-        // Apply filters
-        if ($request->has('status') && $request->status !== '') {
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
 
-        if ($request->has('sentiment') && $request->sentiment !== '') {
+        if ($request->filled('sentiment')) {
             $query->where('sentiment', $request->sentiment);
         }
 
-        if ($request->has('intent') && $request->intent !== '') {
+        if ($request->filled('intent')) {
             $query->where('intent', $request->intent);
         }
 
-        if ($request->has('platform') && $request->platform !== '') {
+        if ($request->filled('platform')) {
             $query->where('platform', $request->platform);
         }
 
-        if ($request->has('search') && $request->search !== '') {
+        if ($request->filled('search')) {
             $search = $request->search;
+
             $query->where(function ($q) use ($search) {
                 $q->where('content', 'like', "%{$search}%")
-                    ->orWhere('author_name', 'like', "%{$search}%");
+                    ->orWhere('author_name', 'like', "%{$search}%")
+                    ->orWhereHas('threadReplies', function ($replyQuery) use ($search) {
+                        $replyQuery->where('content', 'like', "%{$search}%")
+                            ->orWhere('author_name', 'like', "%{$search}%");
+                    });
             });
         }
 
-        $comments = $query->paginate(20);
+        $comments = $query
+            ->latest('commented_at')
+            ->paginate(20);
 
         return Inertia::render('Inbox', [
             'comments' => $comments,
-            'filters' => $request->only(['status', 'sentiment', 'intent', 'platform', 'search']),
+            'filters' => $request->only([
+                'status',
+                'sentiment',
+                'intent',
+                'platform',
+                'search',
+            ]),
         ]);
     }
 
@@ -403,7 +425,7 @@ class CommentController extends Controller
     /**
      * Publish reply to Facebook/Instagram
      */
-    private function publishReply(SocialComment $comment, string $message): bool
+    private function publishReply(SocialComment $comment, string $message)
     {
         try {
             $account = $comment->socialAccount;

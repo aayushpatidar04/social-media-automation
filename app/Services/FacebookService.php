@@ -143,6 +143,7 @@ class FacebookService
                         'social_account_id' => $account->id,
                         'content' => $post['message'] ?? '',
                         'posted_at' => $post['created_time'] ?? now(),
+                        'raw_payload' => $post,
                     ]
                 );
 
@@ -151,28 +152,34 @@ class FacebookService
                 Log::info('Found ' . count($comments) . ' comments on post ' . $post['id']);
 
                 foreach ($comments as $comment) {
-                    $storedComment = SocialComment::updateOrCreate(
-                        [
-                            'platform_comment_id' => $comment['id'],
-                            'platform' => 'facebook',
-                        ],
-                        [
-                            'organization_id' => $account->organization_id,
-                            'social_account_id' => $account->id,
-                            'social_post_id' => $storedPost->id,
-                            'author_name' => $comment['from']['name'] ?? 'Unknown',
-                            'platform_author_id' => $comment['from']['id'] ?? 'JinTouchFinancialServices',
-                            'content' => $comment['message'] ?? '',
-                            'commented_at' => $comment['created_time'] ?? now(),
-                            'status' => 'new',
-                        ]
+                    $storedRootComment = $this->storeFacebookManualComment(
+                        account: $account,
+                        storedPost: $storedPost,
+                        comment: $comment,
+                        postId: $post['id'],
+                        parentComment: null
                     );
 
-                    if ($storedComment->wasRecentlyCreated) {
+                    if ($storedRootComment?->wasRecentlyCreated && !$storedRootComment->is_own_comment) {
                         $totalComments++;
-                        // Dispatch AI analysis job
-                        // AnalyzeCommentWithAI::dispatch($storedComment);
-                        AnalyzeWithOllama::dispatch($storedComment);
+
+                        AnalyzeWithOllama::dispatch($storedRootComment);
+                    }
+
+                    foreach (($comment['comments']['data'] ?? []) as $reply) {
+                        $storedReply = $this->storeFacebookManualComment(
+                            account: $account,
+                            storedPost: $storedPost,
+                            comment: $reply,
+                            postId: $post['id'],
+                            parentComment: $storedRootComment
+                        );
+
+                        if ($storedReply?->wasRecentlyCreated && !$storedReply->is_own_comment) {
+                            $totalComments++;
+
+                            AnalyzeWithOllama::dispatch($storedReply);
+                        }
                     }
                 }
             }
@@ -224,26 +231,27 @@ class FacebookService
      */
     private function getPostComments(SocialAccount $account, string $postId): array
     {
-        $url = "https://graph.facebook.com/{$this->graphVersion}/{$postId}/comments?" .
-            "fields=id,message,created_time,from,type&" .
-            "summary=total_count&" .
-            "limit=100&" .
-            "access_token=" . $account->access_token;
+        $response = Http::get(
+            "https://graph.facebook.com/{$this->graphVersion}/{$postId}/comments",
+            [
+                'fields' => 'id,message,created_time,from,parent,comments.limit(100){id,message,created_time,from,parent}',
+                'summary' => 'total_count',
+                'limit' => 100,
+                'access_token' => $account->access_token,
+            ]
+        );
 
-        try {
-            $response = Http::get($url);
-            $data = $response->json();
+        $data = $response->json();
 
-            if (isset($data['error'])) {
-                Log::error('Error fetching comments for post ' . $postId . ': ' . $data['error']['message']);
-                return [];
-            }
+        if (!$response->successful() || isset($data['error'])) {
+            Log::error('Error fetching comments for post ' . $postId, [
+                'response' => $data,
+            ]);
 
-            return $data['data'] ?? [];
-        } catch (\Exception $e) {
-            Log::error('Exception fetching comments: ' . $e->getMessage());
             return [];
         }
+
+        return $data['data'] ?? [];
     }
 
     /**
@@ -264,13 +272,7 @@ class FacebookService
                 return false;
             }
 
-            // Update comment status
-            $comment->update([
-                'status' => 'replied',
-                'ai_response_text' => $message,
-                'replied_at' => now(),
-            ]);
-
+            return $data;
             return true;
         } catch (\Exception $e) {
             Log::error('Exception publishing reply: ' . $e->getMessage());
@@ -278,113 +280,11 @@ class FacebookService
         }
     }
 
-    /**
-     * Handle webhook events from Facebook
-     */
-    public static function handleWebhookEvent(array $data): void
-    {
-        Log::info('Facebook webhook event received', $data);
-
-        $entry = $data['entry'] ?? [];
-
-        foreach ($entry as $item) {
-            $pageId = $item['id'];
-            $changes = $item['changes'] ?? [];
-
-            foreach ($changes as $change) {
-                $field = $change['field'];
-                $value = $change['value'];
-
-                if ($field === 'feed') {
-                    // New post or comment
-                    self::handleFeedChange($pageId, $value);
-                }
-            }
-        }
-    }
-
-    /**
-     * Handle feed changes from webhook
-     */
-    private static function handleFeedChange(string $pageId, array $data): void
-    {
-        $account = SocialAccount::where('platform_account_id', $pageId)->first();
-
-        if (!$account) {
-            Log::warning('Received webhook for unknown page: ' . $pageId);
-            return;
-        }
-
-        // If it's a comment
-        if (isset($data['comment_id'])) {
-            $service = new self();
-            $comment = $service->fetchSingleComment($account, $data['comment_id']);
-
-            if ($comment) {
-                $storedComment = SocialComment::updateOrCreate(
-                    [
-                        'platform_comment_id' => $comment['id'],
-                        'platform' => 'facebook',
-                    ],
-                    [
-                        'organization_id' => $account->organization_id,
-                        'social_account_id' => $account->id,
-                        'author_name' => $comment['from']['name'] ?? 'Unknown',
-                        'author_id' => $comment['from']['id'] ?? null,
-                        'content' => $comment['message'] ?? '',
-                        'commented_at' => $comment['created_time'] ?? now(),
-                        'status' => 'new',
-                    ]
-                );
-
-                // Dispatch AI analysis
-                \App\Jobs\AnalyzeCommentWithAI::dispatch($storedComment);
-
-                Log::info('New comment stored from webhook: ' . $storedComment->id);
-            }
-        }
-    }
-
-    /**
-     * Fetch a single comment by ID
-     */
-    private function fetchSingleComment(SocialAccount $account, string $commentId): ?array
-    {
-        $url = "https://graph.facebook.com/{$this->graphVersion}/{$commentId}?" .
-            "fields=id,message,created_time,from&" .
-            "access_token=" . $account->access_token;
-
-        try {
-            $response = Http::get($url);
-            $data = $response->json();
-
-            if (isset($data['error'])) {
-                Log::error('Error fetching comment: ' . $data['error']['message']);
-                return null;
-            }
-
-            return $data;
-        } catch (\Exception $e) {
-            Log::error('Exception fetching comment: ' . $e->getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Verify webhook signature
-     */
-    public static function verifyWebhookSignature(string $hubSignature, string $body): bool
-    {
-        $appSecret = env('FACEBOOK_APP_SECRET');
-        $expectedSignature = 'sha1=' . hash_hmac('sha1', $body, $appSecret);
-
-        return hash_equals($expectedSignature, $hubSignature);
-    }
-
     public function syncSingleCommentFromWebhook(SocialAccount $account, array $value): ?SocialComment
     {
         $commentId = $value['comment_id'] ?? null;
         $postId = $value['post_id'] ?? null;
+        $parentPlatformId = $value['parent_id'] ?? null;
 
         if (!$commentId || !$postId) {
             return null;
@@ -404,30 +304,197 @@ class FacebookService
             [
                 'organization_id' => $account->organization_id,
                 'social_account_id' => $account->id,
-                'content' => '',
+                'content' => data_get($value, 'post.message', ''),
                 'posted_at' => now(),
+                'raw_payload' => data_get($value, 'post'),
             ]
         );
 
+        /**
+         * Facebook:
+         * - If parent_id == post_id, this is root/top-level comment.
+         * - If parent_id != post_id, this is reply to another comment.
+         */
+        $isTopLevelComment = $parentPlatformId === $postId;
+        $parentComment = null;
+
+        if (!$isTopLevelComment && $parentPlatformId) {
+            $parentComment = SocialComment::where('platform', 'facebook')
+                ->where('platform_comment_id', $parentPlatformId)
+                ->first();
+        }
+
+        $rootId = null;
+        $platformRootId = $commentId;
+
+        if ($parentComment) {
+            $rootId = $parentComment->root_id ?: $parentComment->id;
+            $platformRootId = $parentComment->platform_root_id ?: $parentComment->platform_comment_id;
+        }
+
+        $fromId = data_get($value, 'from.id');
+        $fromName = data_get($value, 'from.name', 'Unknown');
+
+        if (!$fromId) {
+            Log::warning('Facebook webhook missing author id', [
+                'comment_id' => $commentId,
+                'value' => $value,
+            ]);
+
+            return null;
+        }
+
+        $isOwnComment = (string) $fromId === (string) $account->platform_account_id;
+
         $storedComment = SocialComment::updateOrCreate(
             [
-                'platform_comment_id' => $comment['comment_id'],
+                'platform_comment_id' => $commentId,
                 'platform' => 'facebook',
             ],
             [
                 'social_account_id' => $account->id,
                 'social_post_id' => $storedPost->id,
-                'author_name' => $comment['from']['name'] ?? 'Unknown',
-                'platform_author_id' => $comment['from']['id'] ?? null,
-                'content' => $comment['message'] ?? '',
-                'commented_at' => $comment['created_time'] ?? now(),
+
+                'parent_id' => $parentComment?->id,
+                'root_id' => $rootId,
+
+                'platform_parent_id' => $parentPlatformId,
+                'platform_root_id' => $platformRootId,
+
+                'author_name' => $fromName,
+                'platform_author_id' => $fromId,
+                'content' => $value['message'] ?? '',
+
+                'direction' => $isOwnComment ? 'outbound' : 'inbound',
+                'sender_type' => $isOwnComment ? 'page' : 'customer',
+                'is_own_comment' => $isOwnComment,
+
+                'raw_payload' => $value,
+                'commented_at' => isset($value['created_time'])
+                    ? \Carbon\Carbon::createFromTimestamp($value['created_time'])
+                    : now(),
             ]
         );
 
-        if ($storedComment->wasRecentlyCreated) {
+        /**
+         * If this is a root comment, root_id should point to itself.
+         */
+        if (!$storedComment->root_id) {
+            $storedComment->update([
+                'root_id' => $storedComment->id,
+                'platform_root_id' => $storedComment->platform_comment_id,
+            ]);
+        }
+
+        if ($parentComment) {
+            $parentComment->increment('reply_count');
+
+            if ($parentComment->root_id) {
+                SocialComment::where('id', $parentComment->root_id)
+                    ->increment('reply_count');
+            }
+        }
+
+        if ($storedComment->wasRecentlyCreated && !$storedComment->is_own_comment) {
             $storedComment->update(['status' => 'new']);
 
-            \App\Jobs\AnalyzeWithOllama::dispatch($storedComment);
+            AnalyzeWithOllama::dispatch($storedComment);
+        }
+
+        return $storedComment;
+    }
+
+    private function storeFacebookManualComment(
+        SocialAccount $account,
+        SocialPost $storedPost,
+        array $comment,
+        string $postId,
+        ?SocialComment $parentComment = null
+    ): ?SocialComment {
+        $commentId = $comment['id'] ?? null;
+
+        if (!$commentId) {
+            return null;
+        }
+
+        $fromId = data_get($comment, 'from.id');
+        $fromName = data_get($comment, 'from.name', 'Unknown');
+
+        if (!$fromId) {
+            Log::warning('Facebook manual sync missing author id', [
+                'comment_id' => $commentId,
+                'comment' => $comment,
+            ]);
+
+            return null;
+        }
+
+        $platformParentId = data_get($comment, 'parent.id');
+
+        if (!$platformParentId && $parentComment) {
+            $platformParentId = $parentComment->platform_comment_id;
+        }
+
+        if (!$platformParentId) {
+            $platformParentId = $postId;
+        }
+
+        $rootId = null;
+        $platformRootId = $commentId;
+
+        if ($parentComment) {
+            $rootId = $parentComment->root_id ?: $parentComment->id;
+            $platformRootId = $parentComment->platform_root_id ?: $parentComment->platform_comment_id;
+        }
+
+        $isOwnComment = (string) $fromId === (string) $account->platform_account_id;
+
+        $storedComment = SocialComment::updateOrCreate(
+            [
+                'platform_comment_id' => $commentId,
+                'platform' => 'facebook',
+            ],
+            [
+                'organization_id' => $account->organization_id,
+                'social_account_id' => $account->id,
+                'social_post_id' => $storedPost->id,
+
+                'parent_id' => $parentComment?->id,
+                'root_id' => $rootId,
+
+                'platform_parent_id' => $platformParentId,
+                'platform_root_id' => $platformRootId,
+
+                'author_name' => $fromName,
+                'platform_author_id' => $fromId,
+                'content' => $comment['message'] ?? '',
+
+                'direction' => $isOwnComment ? 'outbound' : 'inbound',
+                'sender_type' => $isOwnComment ? 'page' : 'customer',
+                'is_own_comment' => $isOwnComment,
+
+                'raw_payload' => $comment,
+                'commented_at' => isset($comment['created_time'])
+                    ? \Carbon\Carbon::parse($comment['created_time'])
+                    : now(),
+
+                'status' => $isOwnComment ? 'sent' : 'new',
+            ]
+        );
+
+        if (!$storedComment->root_id) {
+            $storedComment->update([
+                'root_id' => $storedComment->id,
+                'platform_root_id' => $storedComment->platform_comment_id,
+            ]);
+        }
+
+        if ($parentComment && $storedComment->wasRecentlyCreated) {
+            $parentComment->increment('reply_count');
+
+            if ($parentComment->root_id) {
+                SocialComment::where('id', $parentComment->root_id)->increment('reply_count');
+            }
         }
 
         return $storedComment;

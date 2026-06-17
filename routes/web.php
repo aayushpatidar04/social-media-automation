@@ -270,65 +270,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 // ============================================
-// WEBHOOK ROUTES (No Auth Required)
-// ============================================
-
-Route::post('/webhooks/facebook', function (\Illuminate\Http\Request $request) {
-    // Verify webhook signature
-    $hubSignature = $request->header('X-Hub-Signature', '');
-    $body = $request->getContent();
-
-    if (!$hubSignature || !verifyFacebookSignature($hubSignature, $body)) {
-        return response('Unauthorized', 401);
-    }
-
-    // Handle webhook event
-    \App\Services\FacebookService::handleWebhookEvent($request->all());
-
-    return response()->json(['status' => 'ok']);
-})->name('webhooks.facebook');
-
-Route::post('/webhooks/instagram', function (\Illuminate\Http\Request $request) {
-    // Verify webhook signature
-    $hubSignature = $request->header('X-Hub-Signature', '');
-    $body = $request->getContent();
-
-    if (!$hubSignature || !verifyFacebookSignature($hubSignature, $body)) {
-        return response('Unauthorized', 401);
-    }
-
-    // Handle webhook event
-    \App\Services\FacebookService::handleWebhookEvent($request->all());
-
-    return response()->json(['status' => 'ok']);
-})->name('webhooks.instagram');
-
-// Webhook verification endpoint (GET)
-Route::get('/webhooks/facebook', function (\Illuminate\Http\Request $request) {
-    $mode = $request->query('hub_mode');
-    $token = $request->query('hub_verify_token');
-    $challenge = $request->query('hub_challenge');
-
-    if ($mode === 'subscribe' && $token === env('FACEBOOK_VERIFY_TOKEN')) {
-        return $challenge;
-    }
-
-    return response('Forbidden', 403);
-})->name('webhooks.facebook.verify');
-
-Route::get('/webhooks/instagram', function (\Illuminate\Http\Request $request) {
-    $mode = $request->query('hub_mode');
-    $token = $request->query('hub_verify_token');
-    $challenge = $request->query('hub_challenge');
-
-    if ($mode === 'subscribe' && $token === env('FACEBOOK_VERIFY_TOKEN')) {
-        return $challenge;
-    }
-
-    return response('Forbidden', 403);
-})->name('webhooks.instagram.verify');
-
-// ============================================
 // 404 & FALLBACK
 // ============================================
 
