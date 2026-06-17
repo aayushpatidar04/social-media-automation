@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\AnalyzeWithOllama;
 use App\Models\SocialAccount;
 use App\Models\SocialComment;
 use App\Models\SocialPost;
@@ -191,7 +192,10 @@ class LinkedInService
 
                 if ($storedComment->wasRecentlyCreated) {
                     $totalComments++;
-                    \App\Jobs\AnalyzeWithOllama::dispatch($storedComment);
+
+                    if ($this->shouldAnalyzeComment($account, $storedComment)) {
+                        AnalyzeWithOllama::dispatch($storedComment);
+                    }
                 }
 
             }
@@ -302,5 +306,30 @@ class LinkedInService
             Log::error('LinkedIn publish reply exception: ' . $e->getMessage());
             return false;
         }
+    }
+
+    private function shouldAnalyzeComment(
+        SocialAccount $account,
+        SocialComment $comment
+    ): bool {
+        if (!$comment->wasRecentlyCreated) {
+            return false;
+        }
+
+        if ($comment->is_own_comment) {
+            return false;
+        }
+
+        if (!$account->auto_reply_started_at) {
+            return false;
+        }
+
+        if (!$comment->commented_at) {
+            return false;
+        }
+
+        return $comment->commented_at->gte(
+            $account->auto_reply_started_at
+        );
     }
 }

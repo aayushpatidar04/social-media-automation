@@ -51,14 +51,12 @@ class InstagramService
                     parentComment: null
                 );
 
-                if (
-                    $storedRootComment &&
-                    $storedRootComment->wasRecentlyCreated &&
-                    !$storedRootComment->is_own_comment
-                ) {
+                if ($storedRootComment?->wasRecentlyCreated) {
                     $totalComments++;
 
-                    AnalyzeWithOllama::dispatch($storedRootComment);
+                    if ($this->shouldAnalyzeComment($account, $storedRootComment)) {
+                        AnalyzeWithOllama::dispatch($storedRootComment);
+                    }
                 }
 
                 foreach (($comment['replies']['data'] ?? []) as $reply) {
@@ -69,14 +67,12 @@ class InstagramService
                         parentComment: $storedRootComment
                     );
 
-                    if (
-                        $storedReply &&
-                        $storedReply->wasRecentlyCreated &&
-                        !$storedReply->is_own_comment
-                    ) {
+                    if ($storedReply?->wasRecentlyCreated) {
                         $totalComments++;
 
-                        AnalyzeWithOllama::dispatch($storedReply);
+                        if ($this->shouldAnalyzeComment($account, $storedReply)) {
+                            AnalyzeWithOllama::dispatch($storedReply);
+                        }
                     }
                 }
             }
@@ -338,10 +334,11 @@ class InstagramService
             }
         }
 
-        if ($storedComment->wasRecentlyCreated && !$storedComment->is_own_comment) {
-            $storedComment->update(['status' => 'new']);
-
-            AnalyzeWithOllama::dispatch($storedComment);
+        if ($storedComment?->wasRecentlyCreated) {
+            if ($this->shouldAnalyzeComment($account, $storedComment)) {
+                $storedComment->update(['status' => 'new']);
+                AnalyzeWithOllama::dispatch($storedComment);
+            }
         }
 
         return $storedComment;
@@ -470,5 +467,30 @@ class InstagramService
         }
 
         return $storedComment;
+    }
+
+    private function shouldAnalyzeComment(
+        SocialAccount $account,
+        SocialComment $comment
+    ): bool {
+        if (!$comment->wasRecentlyCreated) {
+            return false;
+        }
+
+        if ($comment->is_own_comment) {
+            return false;
+        }
+
+        if (!$account->initial_sync_completed_at) {
+            return false;
+        }
+
+        if (!$comment->commented_at) {
+            return false;
+        }
+
+        return $comment->commented_at->gte(
+            $account->initial_sync_completed_at
+        );
     }
 }

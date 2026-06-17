@@ -339,8 +339,10 @@ class YoutubeService
             }
         }
 
-        if ($storedComment->wasRecentlyCreated && !$storedComment->is_own_comment) {
-            AnalyzeWithOllama::dispatch($storedComment);
+        if ($storedComment->wasRecentlyCreated) {
+            if ($this->shouldAnalyzeComment($account, $storedComment)) {
+                AnalyzeWithOllama::dispatch($storedComment);
+            }
         }
 
         return $storedComment;
@@ -355,5 +357,30 @@ class YoutubeService
         }
 
         return (string) $authorChannelId === (string) $account->platform_account_id;
+    }
+
+    private function shouldAnalyzeComment(
+        SocialAccount $account,
+        SocialComment $comment
+    ): bool {
+        if (!$comment->wasRecentlyCreated) {
+            return false;
+        }
+
+        if ($comment->is_own_comment) {
+            return false;
+        }
+
+        if (!$account->auto_reply_started_at) {
+            return false;
+        }
+
+        if (!$comment->commented_at) {
+            return false;
+        }
+
+        return $comment->commented_at->gte(
+            $account->auto_reply_started_at
+        );
     }
 }

@@ -19,15 +19,15 @@ class MetaWebhookController extends Controller
         
         Log::info('Meta webhook received', $request->all());
 
-        if ($this->hasOwnInstagramComment($payload)) {
-            Log::info('Skipping own Instagram comment webhook', $payload);
+        // if ($this->hasOwnInstagramComment($payload)) {
+        //     Log::info('Skipping own Instagram comment webhook', $payload);
 
-            return response()->json([
-                'success' => true,
-                'skipped' => true,
-                'reason' => 'own_instagram_comment',
-            ]);
-        }
+        //     return response()->json([
+        //         'success' => true,
+        //         'skipped' => true,
+        //         'reason' => 'own_instagram_comment',
+        //     ]);
+        // }
 
         // if ($this->hasOwnFacebookPageComment($payload)) {
         //     Log::info('Skipping own Facebook page comment webhook', $payload);

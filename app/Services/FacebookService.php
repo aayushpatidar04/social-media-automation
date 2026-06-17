@@ -160,10 +160,12 @@ class FacebookService
                         parentComment: null
                     );
 
-                    if ($storedRootComment?->wasRecentlyCreated && !$storedRootComment->is_own_comment) {
+                    if ($storedRootComment?->wasRecentlyCreated) {
                         $totalComments++;
 
-                        AnalyzeWithOllama::dispatch($storedRootComment);
+                        if ($this->shouldAnalyzeComment($account, $storedRootComment)) {
+                            AnalyzeWithOllama::dispatch($storedRootComment);
+                        }
                     }
 
                     foreach (($comment['comments']['data'] ?? []) as $reply) {
@@ -175,10 +177,12 @@ class FacebookService
                             parentComment: $storedRootComment
                         );
 
-                        if ($storedReply?->wasRecentlyCreated && !$storedReply->is_own_comment) {
+                        if ($storedReply?->wasRecentlyCreated) {
                             $totalComments++;
 
-                            AnalyzeWithOllama::dispatch($storedReply);
+                            if ($this->shouldAnalyzeComment($account, $storedReply)) {
+                                AnalyzeWithOllama::dispatch($storedReply);
+                            }
                         }
                     }
                 }
@@ -395,10 +399,12 @@ class FacebookService
             }
         }
 
-        if ($storedComment->wasRecentlyCreated && !$storedComment->is_own_comment) {
-            $storedComment->update(['status' => 'new']);
-
-            AnalyzeWithOllama::dispatch($storedComment);
+        if ($storedComment?->wasRecentlyCreated) {
+            
+            if ($this->shouldAnalyzeComment($account, $storedComment)) {
+                $storedComment->update(['status' => 'new']);
+                AnalyzeWithOllama::dispatch($storedComment);
+            }
         }
 
         return $storedComment;
@@ -498,5 +504,30 @@ class FacebookService
         }
 
         return $storedComment;
+    }
+
+    private function shouldAnalyzeComment(
+        SocialAccount $account,
+        SocialComment $comment
+    ): bool {
+        if (!$comment->wasRecentlyCreated) {
+            return false;
+        }
+
+        if ($comment->is_own_comment) {
+            return false;
+        }
+
+        if (!$account->auto_reply_started_at) {
+            return false;
+        }
+
+        if (!$comment->commented_at) {
+            return false;
+        }
+
+        return $comment->commented_at->gte(
+            $account->auto_reply_started_at
+        );
     }
 }
