@@ -47,17 +47,19 @@ class AnalyzeWithOllama implements ShouldQueue
                 return;
             }
 
-            // Step 1: Analyze sentiment
-            Log::info('📊 Analyzing sentiment...');
-            $sentimentAnalysis = $service->analyzeSentiment($this->comment->content);
+            $conversationHistory = $this->buildConversationHistory($this->comment);
 
-            // Step 2: Classify intent
-            Log::info('🎯 Classifying intent...');
-            $intentAnalysis = $service->classifyIntent($this->comment->content);
+            $analysisText = "
+                Conversation History:
+                {$conversationHistory}
 
-            // Step 3: Detect lead
-            Log::info('👤 Detecting lead...');
-            $leadAnalysis = $service->detectLead($this->comment->content);
+                Current Customer Message:
+                {$this->comment->content}
+                ";
+;
+            $sentimentAnalysis = $service->analyzeSentiment($analysisText);
+            $intentAnalysis = $service->classifyIntent($analysisText);
+            $leadAnalysis = $service->detectLead($analysisText);
 
             // Compile results
             $analysis = [
@@ -128,5 +130,32 @@ class AnalyzeWithOllama implements ShouldQueue
             'sentiment' => 'pending',
             'intent' => 'pending',
         ]);
+    }
+
+    private function buildConversationHistory(SocialComment $comment): string
+    {
+        $rootId = $comment->root_id ?: $comment->id;
+
+        $messages = SocialComment::where('root_id', $rootId)
+            ->where('id', '!=', $comment->id)
+            ->orderBy('commented_at')
+            ->limit(20)
+            ->get();
+
+        if ($messages->isEmpty()) {
+            return 'No previous conversation history.';
+        }
+
+        $history = [];
+
+        foreach ($messages as $message) {
+            $role = $message->direction === 'outbound'
+                ? 'Assistant'
+                : 'Customer';
+
+            $history[] = "{$role}: {$message->content}";
+        }
+
+        return implode("\n", $history);
     }
 }

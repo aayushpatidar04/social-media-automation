@@ -35,9 +35,11 @@ class GenerateOllamaResponse implements ShouldQueue
 
             $service = new OllamaService();
 
+            $conversationHistory = $this->buildConversationHistory($this->comment);
             // Build context
             $context = [
                 'knowledge' => $this->getRelevantKnowledge($this->comment),
+                'conversation_history' => $conversationHistory,
             ];
 
             // Generate response
@@ -93,7 +95,7 @@ class GenerateOllamaResponse implements ShouldQueue
         try {
             // Get relevant knowledge from knowledge base
             // For now, return empty - you can implement RAG here
-            
+
             $knowledge = \App\Models\KnowledgeSource::where('organization_id', $comment->socialAccount->organization_id)
                 // ->where('is_active', true)
                 ->limit(3)
@@ -107,5 +109,32 @@ class GenerateOllamaResponse implements ShouldQueue
             Log::warning('Could not retrieve knowledge: ' . $e->getMessage());
             return '';
         }
+    }
+
+    private function buildConversationHistory(SocialComment $comment): string
+    {
+        $rootId = $comment->root_id ?: $comment->id;
+
+        $messages = SocialComment::where('root_id', $rootId)
+            ->where('id', '!=', $comment->id)
+            ->orderBy('commented_at')
+            ->limit(20)
+            ->get();
+
+        if ($messages->isEmpty()) {
+            return 'No previous conversation history.';
+        }
+
+        $history = [];
+
+        foreach ($messages as $message) {
+            $role = $message->direction === 'outbound'
+                ? 'Assistant'
+                : 'Customer';
+
+            $history[] = "{$role}: {$message->content}";
+        }
+
+        return implode("\n", $history);
     }
 }

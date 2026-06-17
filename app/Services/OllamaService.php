@@ -55,7 +55,11 @@ class OllamaService
         try {
             Log::info('Generating response for comment: ' . $comment->id);
 
-            $prompt = $this->buildResponsePrompt($comment->content, $comment->author_name, $context);
+            $prompt = $this->buildResponsePrompt(
+                commentContent: $comment->content,
+                authorName: $comment->author_name,
+                context: $context
+            );
 
             $response = $this->callOllama($prompt);
 
@@ -196,21 +200,42 @@ class OllamaService
     /**
      * Build response prompt
      */
-    private function buildResponsePrompt(string $commentContent, string $authorName, array $context = []): string
-    {
-        $knowledge = '';
-        if (!empty($context['knowledge'])) {
-            $knowledge = "\n\nRelevant Knowledge:\n" . $context['knowledge'];
-        }
+    private function buildResponsePrompt(
+        string $commentContent,
+        string $authorName,
+        array $context = []
+    ): string {
+        $knowledge = !empty($context['knowledge'])
+            ? "\n\nRelevant Knowledge Base:\n{$context['knowledge']}"
+            : "\n\nRelevant Knowledge Base:\nNo specific knowledge found.";
+
+        $conversationHistory = !empty($context['conversation_history'])
+            ? $context['conversation_history']
+            : 'No previous conversation history.';
 
         return <<<PROMPT
-            You are a customer service representative for a financial services company. 
-            Write a helpful, professional response to this comment. Keep it brief (1-2 sentences).
+            You are a customer service representative for a financial services company.
 
-            Comment from $authorName: "$commentContent"
-            $knowledge
+            Your job:
+            - Understand the full conversation history before replying.
+            - Reply only to the latest customer message.
+            - Do not repeat information already given by the assistant.
+            - Keep the reply brief, professional, and helpful.
+            - Use 1-2 sentences only.
+            - Do not mention that you are an AI.
+            - Do not promise guaranteed returns or financial outcomes.
+            - If the user asks for investment advice, suggest speaking with an advisor or sharing details for guidance.
 
-            Response (professional and helpful):
+            Relevant Knowledge Base:
+            {$knowledge}
+
+            Conversation History:
+            {$conversationHistory}
+
+            Latest Customer Message from {$authorName}:
+            "{$commentContent}"
+
+            Write the best reply:
             PROMPT;
     }
 
