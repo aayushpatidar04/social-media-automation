@@ -423,7 +423,9 @@ class InstagramService
 
         $isOwnComment = false;
 
-        if (data_get($comment, 'from.self_ig_scoped_id')) {
+        $instagramId = $account->metadata['instagram_id'] ?? null;
+
+        if ($instagramId && $authorId === $instagramId) {
             $isOwnComment = true;
         }
 
