@@ -279,8 +279,9 @@ class FacebookService
 
                 'raw_payload' => $value,
                 'commented_at' => isset($value['created_time'])
-                    ? \Carbon\Carbon::createFromTimestamp($value['created_time'])
-                    : now(),
+                    ? \Carbon\Carbon::parse($value['created_time'])->setTimezone('Asia/Kolkata')
+                    : now()->setTimezone('Asia/Kolkata'),
+
             ]
         );
 
@@ -384,9 +385,10 @@ class FacebookService
                 'is_own_comment' => $isOwnComment,
 
                 'raw_payload' => $comment,
-                'commented_at' => isset($comment['created_time'])
-                    ? \Carbon\Carbon::parse($comment['created_time'])
-                    : now(),
+                'commented_at' => isset($value['created_time'])
+                    ? \Carbon\Carbon::parse($value['created_time'])->setTimezone('Asia/Kolkata')
+                    : now()->setTimezone('Asia/Kolkata'),
+
 
                 'status' => $isOwnComment ? 'sent' : 'new',
             ]

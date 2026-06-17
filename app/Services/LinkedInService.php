@@ -185,7 +185,12 @@ class LinkedInService
                         'author_name' => $comment['authorName'] ?? 'LinkedIn User',
                         'platform_author_id' => $comment['actor'] ?? null,
                         'content' => $message,
-                        'commented_at' => isset($comment['createdAt']) ? date('Y-m-d H:i:s', intval($comment['createdAt'] / 1000)) : now(),
+                        'commented_at' => isset($comment['createdAt'])
+                            ? \Carbon\Carbon::createFromTimestampMs($comment['createdAt'])
+                                ->setTimezone('Asia/Kolkata')
+                                ->format('Y-m-d H:i:s')
+                            : now()->setTimezone('Asia/Kolkata')->format('Y-m-d H:i:s'),
+
                         'status' => 'new',
                     ]
                 );

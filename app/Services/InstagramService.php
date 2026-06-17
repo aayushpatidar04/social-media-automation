@@ -323,8 +323,9 @@ class InstagramService
                 'raw_payload' => $comment,
 
                 'commented_at' => isset($comment['timestamp'])
-                    ? \Carbon\Carbon::parse($comment['timestamp'])
-                    : now(),
+                    ? \Carbon\Carbon::parse($comment['timestamp'])->setTimezone('Asia/Kolkata')
+                    : now()->setTimezone('Asia/Kolkata'),
+
             ]
         );
 
@@ -455,8 +456,8 @@ class InstagramService
 
                 'raw_payload' => $comment,
                 'commented_at' => isset($comment['timestamp'])
-                    ? \Carbon\Carbon::parse($comment['timestamp'])
-                    : now(),
+                    ? \Carbon\Carbon::parse($comment['timestamp'])->setTimezone('Asia/Kolkata')
+                    : now()->setTimezone('Asia/Kolkata'),
 
                 'status' => $isOwnComment ? 'sent' : 'new',
             ]
