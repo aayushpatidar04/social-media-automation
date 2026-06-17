@@ -102,6 +102,15 @@ class InstagramService
             );
         }
 
+        $instagramId = $data['connected_instagram_account']['id'] ?? null;
+
+        if ($instagramId) {
+            $account->metadata = array_merge($account->metadata ?? [], [
+                'instagram_id' => $instagramId,
+            ]);
+            $account->save();
+        }
+
         return $data['connected_instagram_account']['id'] ?? null;
     }
 
@@ -280,14 +289,11 @@ class InstagramService
             return null;
         }
 
-        /**
-         * Own Instagram replies often include from.self_ig_scoped_id in webhook,
-         * but here fetched comment may not always return that.
-         * Since controller already skips own Instagram webhooks, incoming here is mostly customer.
-         */
         $isOwnComment = false;
 
-        if (!empty($comment['from']['self_ig_scoped_id'])) {
+        $instagramId = $account->metadata['instagram_id'] ?? null;
+
+        if ($instagramId && $authorId === $instagramId) {
             $isOwnComment = true;
         }
 

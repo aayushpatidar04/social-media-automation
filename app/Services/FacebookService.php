@@ -111,6 +111,27 @@ class FacebookService
                     'is_active' => true,
                 ]
             );
+
+            // 🔎 Fetch connected Instagram account
+            $igResponse = Http::get(
+                "https://graph.facebook.com/{$this->graphVersion}/{$page['id']}",
+                [
+                    'fields' => 'connected_instagram_account',
+                    'access_token' => $page['access_token'],
+                ]
+            )->json();
+
+            if (!empty($igResponse['connected_instagram_account']['id'])) {
+                $instagramId = $igResponse['connected_instagram_account']['id'];
+
+                // Merge into metadata JSON
+                $metadata = $account->metadata ?? [];
+                $metadata['instagram_id'] = $instagramId;
+
+                $account->metadata = $metadata;
+                $account->save();
+            }
+            
             $accounts[] = $account;
         }
 
@@ -400,7 +421,7 @@ class FacebookService
         }
 
         if ($storedComment?->wasRecentlyCreated) {
-            
+
             if ($this->shouldAnalyzeComment($account, $storedComment)) {
                 $storedComment->update(['status' => 'new']);
                 AnalyzeWithOllama::dispatch($storedComment);
