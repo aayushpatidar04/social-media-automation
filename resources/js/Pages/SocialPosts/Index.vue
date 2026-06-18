@@ -45,7 +45,7 @@
                     <div v-for="post in posts" :key="post.id"
                         class="bg-slate-800 border border-slate-700 rounded-lg p-6">
                         <div class="flex justify-between gap-4 mb-4">
-                            <div>
+                            <div style="max-width: 95%;">
                                 <p class="text-slate-400 text-sm mb-1">
                                     <span class="capitalize font-mono">{{ platformLabel(post.platform) }}</span>
                                     · {{ formatDate(post.posted_at) }}
@@ -56,7 +56,7 @@
                                 <p class="text-slate-500 text-xs mt-1">{{ post.platform_post_id }}</p>
                             </div>
 
-                            <span class="bg-slate-700 text-slate-200 px-3 py-1 rounded-full text-xs h-fit">
+                            <span class="bg-slate-700 text-slate-200 text-center px-3 py-1 rounded-full text-xs h-fit">
                                 {{ post.knowledge_sources?.length || 0 }} sources
                             </span>
                         </div>
@@ -99,6 +99,19 @@
                                 View Details
                             </button>
                         </div>
+                    </div>
+
+                    <div v-if="pagination.links?.length > 3" class="mt-8 flex flex-wrap gap-2 justify-center">
+                        <button v-for="link in pagination.links" :key="link.label" v-html="link.label"
+                            :disabled="!link.url" @click="goToPage(link.url)" :class="[
+                                'px-4 py-2 rounded-lg text-sm',
+                                link.active
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-slate-700 text-slate-300',
+                                !link.url
+                                    ? 'opacity-50 cursor-not-allowed'
+                                    : 'hover:bg-slate-600'
+                            ]" />
                     </div>
                 </div>
             </div>
@@ -212,7 +225,8 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 
 const page = usePage()
 
-const posts = computed(() => page.props.posts?.data || page.props.posts || [])
+const posts = computed(() => page.props.posts.data || [])
+const pagination = computed(() => page.props.posts)
 const sources = computed(() => page.props.sources || [])
 const currentFilters = computed(() => page.props.filters || {})
 
@@ -254,6 +268,15 @@ const attachSources = () => {
         onSuccess: () => {
             attachPost.value = null
         },
+    })
+}
+
+const goToPage = (url) => {
+    if (!url) return
+
+    router.visit(url, {
+        preserveState: true,
+        preserveScroll: true,
     })
 }
 

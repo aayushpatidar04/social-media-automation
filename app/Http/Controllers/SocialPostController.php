@@ -142,7 +142,7 @@ class SocialPostController extends Controller
 
     private function authorizePost(SocialPost $post): void
     {
-        if ($post->organization_id !== Auth::user()->organization_id) {
+        if ($post->socialAccount->organization_id !== Auth::user()->organization_id) {
             abort(403);
         }
     }

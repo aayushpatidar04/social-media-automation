@@ -33,7 +33,6 @@ class KnowledgeSourceController extends Controller
             ->withQueryString();
 
         $posts = SocialPost::query()
-            ->where('organization_id', $organization->id)
             ->latest('posted_at')
             ->limit(100)
             ->get();
