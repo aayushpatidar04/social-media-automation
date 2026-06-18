@@ -6,6 +6,8 @@ namespace App\Jobs;
 
 use App\Models\SocialComment;
 use App\Models\AiConversation;
+use App\Models\KnowledgeChunk;
+use App\Models\KnowledgeSource;
 use App\Services\OllamaService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -92,23 +94,30 @@ class GenerateOllamaResponse implements ShouldQueue
      */
     private function getRelevantKnowledge(SocialComment $comment): string
     {
-        try {
-            // Get relevant knowledge from knowledge base
-            // For now, return empty - you can implement RAG here
+        $post = $comment->socialPost;
 
-            $knowledge = \App\Models\KnowledgeSource::where('organization_id', $comment->socialAccount->organization_id)
-                // ->where('is_active', true)
-                ->limit(3)
-                ->get()
-                ->pluck('content')
-                ->join("\n\n");
-
-            return $knowledge ?: '';
-
-        } catch (\Exception $e) {
-            Log::warning('Could not retrieve knowledge: ' . $e->getMessage());
+        if (!$post) {
             return '';
         }
+
+        $postSpecificKnowledge = KnowledgeChunk::whereHas('source.socialPosts', function ($q) use ($post) {
+            $q->where('social_posts.id', $post->id)
+                ->where('knowledge_source_social_post.is_active', true);
+        })
+            ->limit(5)
+            ->pluck('content')
+            ->join("\n\n");
+
+        $globalKnowledge = KnowledgeChunk::whereHas('source', function ($q) use ($comment) {
+            $q->where('organization_id', $comment->socialAccount->organization_id)
+                ->where('scope', 'global')
+                ->where('is_active', true);
+        })
+            ->limit(3)
+            ->pluck('content')
+            ->join("\n\n");
+
+        return trim($postSpecificKnowledge . "\n\n" . $globalKnowledge);
     }
 
     private function buildConversationHistory(SocialComment $comment): string

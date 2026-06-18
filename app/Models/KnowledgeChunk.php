@@ -20,4 +20,9 @@ class KnowledgeChunk extends Model
     {
         return $this->belongsTo(KnowledgeSource::class);
     }
+
+    public function source()
+    {
+        return $this->belongsTo(KnowledgeSource::class, 'knowledge_source_id');
+    }
 }

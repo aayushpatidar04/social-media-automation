@@ -47,4 +47,16 @@ class KnowledgeSource extends Model
     {
         return $this->hasMany(KnowledgeChunk::class);
     }
+
+    public function socialPosts()
+    {
+        return $this->belongsToMany(SocialPost::class, 'knowledge_source_social_post')
+            ->withPivot(['usage_type', 'is_active'])
+            ->withTimestamps();
+    }
+
+    public function chunks()
+    {
+        return $this->hasMany(KnowledgeChunk::class);
+    }
 }

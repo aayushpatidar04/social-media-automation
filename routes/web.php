@@ -6,10 +6,12 @@ use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\FacebookAuthController;
 use App\Http\Controllers\KnowledgeBaseController;
+use App\Http\Controllers\KnowledgeSourceController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\LinkedInController;
 use App\Http\Controllers\MetaWebhookController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\SocialPostController;
 use App\Http\Controllers\TwitterController;
 use App\Http\Controllers\YoutubeController;
 use Illuminate\Foundation\Application;
@@ -59,25 +61,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('inbox')->name('comments.')->group(function () {
         Route::get('/', [CommentController::class, 'inbox'])
             ->name('index');
-
         Route::get('/filter', [CommentController::class, 'filter'])
             ->name('filter');
-
         Route::get('/{comment}', [CommentController::class, 'show'])
             ->name('show');
-
         Route::post('/{comment}/reply', [CommentController::class, 'sendReply'])
             ->name('reply');
-
         Route::post('/{comment}/approve', [CommentController::class, 'approveAIResponse'])
             ->name('approve');
-
         Route::post('/{comment}/reject', [CommentController::class, 'rejectAIResponse'])
             ->name('reject');
-
         Route::post('/{comment}/mark-responded', [CommentController::class, 'markAsResponded'])
             ->name('mark-responded');
-
         Route::post('/{comment}/mark-reviewed', [CommentController::class, 'markAsReviewed'])
             ->name('mark-reviewed');
     });
@@ -89,10 +84,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('analytics')->name('analytics.')->group(function () {
         Route::get('/', [AnalyticsController::class, 'dashboard'])
             ->name('dashboard');
-
         Route::get('/metrics/{metricType}', [AnalyticsController::class, 'getMetrics'])
             ->name('metrics');
-
         Route::post('/export', [AnalyticsController::class, 'exportReport'])
             ->name('export');
     });
@@ -104,19 +97,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('leads')->name('leads.')->group(function () {
         Route::get('/', [LeadController::class, 'index'])
             ->name('index');
-
         Route::get('/{lead}', [LeadController::class, 'show'])
             ->name('show');
-
         Route::post('/{lead}/assign', [LeadController::class, 'assign'])
             ->name('assign');
-
         Route::post('/{lead}/update-status', [LeadController::class, 'updateStatus'])
             ->name('update-status');
-
         Route::post('/{lead}/contact', [LeadController::class, 'logContact'])
             ->name('log-contact');
-
         Route::get('/filter', [LeadController::class, 'filter'])
             ->name('filter');
     });
@@ -128,10 +116,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('profile')->name('profile.')->group(function () {
         Route::get('/', [ProfileController::class, 'edit'])
             ->name('edit');
-
         Route::patch('/', [ProfileController::class, 'update'])
             ->name('update');
-
         Route::delete('/', [ProfileController::class, 'destroy'])
             ->name('destroy');
     });
@@ -143,16 +129,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('settings/social-accounts')->name('settings.social-accounts.')->group(function () {
         Route::get('/', [SocialAccountController::class, 'index'])
             ->name('index');
-
         Route::post('/{account}/sync', [SocialAccountController::class, 'sync'])
             ->name('sync');
-
         Route::post('/{account}/disconnect', [SocialAccountController::class, 'disconnect'])
             ->name('disconnect');
-
         Route::post('/{account}/reconnect', [SocialAccountController::class, 'reconnect'])
             ->name('reconnect');
-
         Route::post('/{account}/test', [SocialAccountController::class, 'test'])
             ->name('test');
     });
@@ -169,11 +151,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
                 'currentUserId' => Auth::id(),
             ]);
         })->name('index');
-
         Route::post('/invite', function () {
             // Invite team member logic here
         })->name('invite');
-
         Route::delete('/{user}', function () {
             // Remove team member logic here
         })->name('remove');
@@ -190,7 +170,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
                 'organization' => $organization,
             ]);
         })->name('index');
-
         Route::patch('/', function () {
             // Update organization logic here
         })->name('update');
@@ -204,11 +183,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/', function () {
             return Inertia::render('Settings/API');
         })->name('index');
-
         Route::post('/keys/generate', function () {
             // Generate API key logic here
         })->name('generate-key');
-
         Route::delete('/keys/{key}', function () {
             // Revoke API key logic here
         })->name('revoke-key');
@@ -221,10 +198,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('settings/knowledge-base')->name('settings.knowledge-base.')->group(function () {
         Route::get('/', [KnowledgeBaseController::class, 'index'])
             ->name('index');
-
         Route::post('/upload', [KnowledgeBaseController::class, 'upload'])
             ->name('upload');
-
         Route::delete('/{source}', [KnowledgeBaseController::class, 'delete'])
             ->name('delete');
     });
@@ -235,13 +210,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/auth/youtube/login', [YoutubeController::class, 'login'])
         ->name('youtube.login');
-
     Route::get('/auth/youtube/callback', [YoutubeController::class, 'callback'])
         ->name('youtube.callback');
-
     Route::post('/settings/social-accounts/{account}/youtube-sync', [YoutubeController::class, 'sync'])
         ->name('youtube.sync');
-
     Route::post('/youtube/comments/{comment}/reply', [YoutubeController::class, 'reply'])
         ->name('youtube.comment.reply');
 
@@ -250,9 +222,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // ============================================
 
     Route::get('/auth/twitter/login', [TwitterController::class, 'login'])->name('twitter.login');
-
     Route::get('/auth/twitter/callback', [TwitterController::class, 'callback'])->name('twitter.callback');
-
     Route::post('/settings/social-accounts/{account}/twitter-sync', [TwitterController::class, 'sync'])->name('twitter.sync');
 
     // ============================================
@@ -260,13 +230,40 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // ============================================
 
     Route::get('/auth/linkedin/login', [LinkedInController::class, 'login'])->name('linkedin.login');
-
     Route::get('/auth/linkedin/callback', [LinkedInController::class, 'callback'])->name('linkedin.callback');
-
     Route::post('/settings/social-accounts/{account}/linkedin-sync', [LinkedInController::class, 'sync'])->name('linkedin.sync');
-
     Route::post('/linkedin/comments/{comment}/reply', [LinkedInController::class, 'reply'])->name('linkedin.comment.reply');
 
+
+    Route::get('/knowledge-sources', [KnowledgeSourceController::class, 'index'])
+        ->name('knowledge-sources.index');
+
+    Route::post('/knowledge-sources', [KnowledgeSourceController::class, 'store'])
+        ->name('knowledge-sources.store');
+
+    Route::post('/knowledge-sources/{source}/link-posts', [KnowledgeSourceController::class, 'linkPosts'])
+        ->name('knowledge-sources.link-posts');
+
+    Route::delete('/knowledge-sources/{source}/posts/{post}', [KnowledgeSourceController::class, 'unlinkPost'])
+        ->name('knowledge-sources.unlink-post');
+
+    Route::post('/knowledge-sources/{source}/reindex', [KnowledgeSourceController::class, 'reindex'])
+        ->name('knowledge-sources.reindex');
+
+    Route::delete('/knowledge-sources/{source}', [KnowledgeSourceController::class, 'destroy'])
+        ->name('knowledge-sources.destroy');
+
+    Route::get('/social-posts', [SocialPostController::class, 'index'])
+        ->name('social-posts.index');
+
+    Route::post('/social-posts/{post}/knowledge-sources', [SocialPostController::class, 'attachKnowledgeSources'])
+        ->name('social-posts.attach-knowledge');
+
+    Route::delete('/social-posts/{post}/knowledge-sources/{source}', [SocialPostController::class, 'unlinkKnowledgeSource'])
+        ->name('social-posts.unlink-knowledge');
+
+    Route::post('/social-posts/{post}/knowledge-sources/upload', [SocialPostController::class, 'uploadKnowledgeSource'])
+        ->name('social-posts.upload-knowledge');
 });
 
 // ============================================

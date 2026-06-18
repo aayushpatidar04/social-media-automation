@@ -15,18 +15,29 @@
                         <Link href="/dashboard" class="text-slate-300 hover:text-white transition-colors">
                             Dashboard
                         </Link>
+
                         <Link href="/inbox" class="text-slate-300 hover:text-white transition-colors">
                             Inbox
                         </Link>
+
+                        <Link href="/social-posts" class="text-slate-300 hover:text-white transition-colors">
+                            Posts
+                        </Link>
+
+                        <Link href="/knowledge-sources" class="text-slate-300 hover:text-white transition-colors">
+                            Knowledge
+                        </Link>
+
                         <Link href="/analytics" class="text-slate-300 hover:text-white transition-colors">
                             Analytics
                         </Link>
+
                         <Link href="/leads" class="text-slate-300 hover:text-white transition-colors">
                             Leads
                         </Link>
-                        <Link href="/settings/social-accounts"
-                            class="text-slate-300 hover:text-white transition-colors">
-                            Settings
+
+                        <Link href="/settings/social-accounts" class="text-slate-300 hover:text-white transition-colors">
+                            Accounts
                         </Link>
                     </div>
 

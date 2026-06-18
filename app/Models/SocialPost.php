@@ -42,4 +42,11 @@ class SocialPost extends Model
     {
         return $this->hasMany(SocialComment::class);
     }
+
+    public function knowledgeSources()
+    {
+        return $this->belongsToMany(KnowledgeSource::class, 'knowledge_source_social_post')
+            ->withPivot(['usage_type', 'is_active'])
+            ->withTimestamps();
+    }
 }
