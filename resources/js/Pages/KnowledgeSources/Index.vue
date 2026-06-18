@@ -161,8 +161,11 @@
                 Select posts for this source
               </p>
 
+              <input v-model="postSearch" type="text" placeholder="Search posts by platform, ID, or content..."
+                class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" />
+
               <div class="max-h-60 overflow-y-auto bg-slate-900 border border-slate-700 rounded-lg p-3 space-y-2">
-                <label v-for="post in posts" :key="post.id"
+                <label v-for="post in filteredPostsForSource" :key="post.id"
                   class="flex gap-3 items-start bg-slate-800 rounded p-3 cursor-pointer hover:bg-slate-700">
                   <input type="checkbox" :value="post.id" v-model="form.post_ids" class="mt-1" />
 
@@ -175,6 +178,10 @@
                     </p>
                   </div>
                 </label>
+
+                <p v-if="filteredPostsForSource.length === 0" class="text-slate-500 text-sm text-center py-4">
+                  No posts found.
+                </p>
               </div>
 
               <p v-if="form.post_ids.length === 0" class="text-yellow-400 text-xs">
@@ -333,4 +340,22 @@ const formatSize = (bytes) => {
   if (!bytes) return '0 KB'
   return `${(bytes / 1024).toFixed(1)} KB`
 }
+
+const postSearch = ref('')
+
+const filteredPostsForSource = computed(() => {
+  const search = postSearch.value.toLowerCase().trim()
+
+  if (!search) {
+    return posts.value
+  }
+
+  return posts.value.filter(post => {
+    return (
+      String(post.platform || '').toLowerCase().includes(search) ||
+      String(post.platform_post_id || '').toLowerCase().includes(search) ||
+      String(post.content || '').toLowerCase().includes(search)
+    )
+  })
+})
 </script>
