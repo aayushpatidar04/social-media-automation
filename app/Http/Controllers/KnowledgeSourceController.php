@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\IndexKnowledgeSource;
 use App\Models\KnowledgeSource;
 use App\Models\SocialPost;
 use Illuminate\Http\Request;
@@ -79,6 +80,8 @@ class KnowledgeSourceController extends Controller
             'is_indexed' => false,
         ]);
 
+        IndexKnowledgeSource::dispatch($source);
+
         return back()->with('success', 'Knowledge source uploaded successfully.');
     }
 
@@ -134,7 +137,7 @@ class KnowledgeSourceController extends Controller
         ]);
 
         // Later dispatch actual extraction/chunking job:
-        // IndexKnowledgeSource::dispatch($source);
+        IndexKnowledgeSource::dispatch($source);
 
         return back()->with('success', 'Re-index queued successfully.');
     }
