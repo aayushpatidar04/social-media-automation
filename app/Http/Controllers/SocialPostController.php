@@ -17,7 +17,6 @@ class SocialPostController extends Controller
 
         $posts = SocialPost::query()
             ->with('knowledgeSources')
-            ->where('organization_id', $organization->id)
             ->when($request->filled('search'), function ($q) use ($request) {
                 $q->where(function ($sub) use ($request) {
                     $sub->where('content', 'like', "%{$request->search}%")
