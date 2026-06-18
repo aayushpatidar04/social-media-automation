@@ -26,9 +26,9 @@ class KnowledgeSourceController extends Controller
                         ->orWhere('original_filename', 'like', "%{$request->search}%");
                 });
             })
-            ->when($request->filled('type'), fn ($q) => $q->where('type', $request->type))
-            ->when($request->filled('scope'), fn ($q) => $q->where('scope', $request->scope))
-            ->when($request->filled('indexed'), fn ($q) => $q->where('is_indexed', (bool) $request->indexed))
+            ->when($request->filled('type'), fn($q) => $q->where('type', $request->type))
+            ->when($request->filled('scope'), fn($q) => $q->where('scope', $request->scope))
+            ->when($request->filled('indexed'), fn($q) => $q->where('is_indexed', (bool) $request->indexed))
             ->latest()
             ->paginate(20)
             ->withQueryString();
@@ -55,6 +55,9 @@ class KnowledgeSourceController extends Controller
             'type' => ['required', 'in:pdf,docx,faq,script,policy,template,brochure'],
             'scope' => ['required', 'in:global,post_specific'],
             'file' => ['required', 'file', 'max:10240'],
+
+            'post_ids' => ['required_if:scope,post_specific', 'array'],
+            'post_ids.*' => ['integer', 'exists:social_posts,id'],
         ]);
 
         $file = $request->file('file');
@@ -64,7 +67,7 @@ class KnowledgeSourceController extends Controller
             'public'
         );
 
-        KnowledgeSource::create([
+        $source = KnowledgeSource::create([
             'organization_id' => $organization->id,
             'uploaded_by_user_id' => Auth::id(),
             'name' => $validated['name'],
@@ -79,6 +82,25 @@ class KnowledgeSourceController extends Controller
             ],
             'is_indexed' => false,
         ]);
+
+        if ($validated['scope'] === 'post_specific') {
+            $postIds = SocialPost::where('organization_id', $organization->id)
+                ->whereIn('id', $validated['post_ids'] ?? [])
+                ->pluck('id')
+                ->toArray();
+
+            $syncData = [];
+
+            foreach ($postIds as $postId) {
+                $syncData[$postId] = [
+                    'organization_id' => $organization->id,
+                    'usage_type' => 'primary',
+                    'is_active' => true,
+                ];
+            }
+
+            $source->socialPosts()->sync($syncData);
+        }
 
         IndexKnowledgeSource::dispatch($source);
 

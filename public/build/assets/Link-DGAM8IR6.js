@@ -1,1 +1,0 @@
-import{A as e,F as t,M as n,O as r,_ as i,n as a}from"./app-CqgjLg4H.js";var o={__name:`Link`,props:{href:{type:String,required:!0},as:{type:String,default:`a`}},setup(o){return(s,c)=>(r(),i(t(a),{href:o.href,as:o.as,class:`text-blue-400 hover:text-blue-300 transition-colors`},{default:n(()=>[e(s.$slots,`default`)]),_:3},8,[`href`,`as`]))}};export{o as t};
