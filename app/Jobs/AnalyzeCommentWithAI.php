@@ -1,10 +1,9 @@
 <?php
 
-// app/Jobs/AnalyzeCommentWithAI.php
-
 namespace App\Jobs;
 
 use App\Models\SocialComment;
+use App\Models\Lead;
 use App\Services\OpenAIService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -20,21 +19,15 @@ class AnalyzeCommentWithAI implements ShouldQueue
     public $timeout = 60;
     public $tries = 2;
 
-    private SocialComment $comment;
-
-    public function __construct(SocialComment $comment)
+    public function __construct(public SocialComment $comment)
     {
-        $this->comment = $comment;
     }
 
     public function handle()
     {
         try {
-            Log::info('Analyzing comment: ' . $this->comment->id);
-
             $service = new OpenAIService();
 
-            // Analyze sentiment, intent, and lead score
             $analysis = $service->analyzeComment($this->comment);
 
             Log::info('Analysis complete for comment: ' . $this->comment->id, $analysis);
@@ -50,20 +43,24 @@ class AnalyzeCommentWithAI implements ShouldQueue
                 'ai_analysis_completed_at' => now(),
             ]);
 
-            Log::info('Comment updated with analysis: ' . $this->comment->id);
+            // Create Lead record if AI detected it as a lead or sales intent
+            if ($analysis['is_lead'] || $analysis['intent'] === 'sales') {
+                $this->createOrUpdateLead($analysis);
+            }
 
-            // If it's a potential lead or high-value comment, generate AI response
+            // Generate AI response for high-value comments
             if ($analysis['is_lead'] || $analysis['intent'] === 'sales') {
                 GenerateAIResponse::dispatch($this->comment);
             }
 
-            // Broadcast update to dashboard
-            // \Illuminate\Support\Facades\Broadcast::channel('analytics.org.' . $this->comment->organization_id)
-            //     ->notify(new \App\Notifications\CommentAnalyzed($this->comment));
-
         } catch (\Exception $e) {
             Log::error('AI analysis failed for comment: ' . $this->comment->id . ' - ' . $e->getMessage());
-            throw $e;
+
+            $this->comment->update([
+                'ai_analysis_failed' => true,
+                'ai_error_message' => $e->getMessage(),
+                'ai_analysis_completed_at' => now(),
+            ]);
         }
     }
 
@@ -77,5 +74,39 @@ class AnalyzeCommentWithAI implements ShouldQueue
             'ai_analysis_failed' => true,
             'ai_error_message' => $exception->getMessage(),
         ]);
+    }
+
+    private function createOrUpdateLead(array $analysis): void
+    {
+        $existingLead = Lead::where('social_comment_id', $this->comment->id)->first();
+
+        if ($existingLead) {
+            $existingLead->update([
+                'lead_score' => $analysis['lead_score'],
+            ]);
+
+            Log::info('Lead updated: ' . $existingLead->id);
+            return;
+        }
+
+        $leadType = match ($analysis['intent'] ?? 'sales') {
+            'sales' => 'sales',
+            'support' => 'support',
+            default => 'sales',
+        };
+
+        Lead::create([
+            'organization_id' => $this->comment->socialAccount->organization_id,
+            'social_comment_id' => $this->comment->id,
+            'platform_author_id' => $this->comment->author_id,
+            'author_name' => $this->comment->author_name,
+            'author_profile_url' => $this->comment->author_avatar_url,
+            'initial_message' => substr($this->comment->content, 0, 500),
+            'lead_type' => $leadType,
+            'lead_score' => $analysis['lead_score'],
+            'lead_status' => 'new',
+        ]);
+
+        Log::info('Lead created for comment: ' . $this->comment->id);
     }
 }

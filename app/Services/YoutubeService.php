@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Jobs\AnalyzeWithOllama;
 use App\Models\SocialAccount;
 use App\Models\SocialComment;
 use App\Models\SocialPost;
@@ -15,57 +14,23 @@ class YoutubeService
 
     public function exchangeCodeForToken(string $code): array
     {
+        $clientId = env('YOUTUBE_CLIENT_ID');
+        $clientSecret = env('YOUTUBE_CLIENT_SECRET');
+        $redirectUri = env('YOUTUBE_REDIRECT_URI');
+
         $response = Http::asForm()->post('https://oauth2.googleapis.com/token', [
-            'client_id' => env('YOUTUBE_CLIENT_ID'),
-            'client_secret' => env('YOUTUBE_CLIENT_SECRET'),
             'code' => $code,
+            'client_id' => $clientId,
+            'client_secret' => $clientSecret,
+            'redirect_uri' => $redirectUri,
             'grant_type' => 'authorization_code',
-            'redirect_uri' => env('YOUTUBE_REDIRECT_URI'),
         ]);
-
-        $data = $response->json();
 
         if (!$response->successful()) {
-            throw new \Exception($data['error_description'] ?? $data['error'] ?? 'YouTube token exchange failed.');
+            throw new \Exception('YouTube token exchange failed: ' . $response->body());
         }
 
-        return $data;
-    }
-
-    public function refreshAccessToken(SocialAccount $account): string
-    {
-        if (!$account->refresh_token) {
-            throw new \Exception('YouTube refresh token missing. Please reconnect YouTube.');
-        }
-
-        $response = Http::asForm()->post('https://oauth2.googleapis.com/token', [
-            'client_id' => env('YOUTUBE_CLIENT_ID'),
-            'client_secret' => env('YOUTUBE_CLIENT_SECRET'),
-            'refresh_token' => $account->refresh_token,
-            'grant_type' => 'refresh_token',
-        ]);
-
-        $data = $response->json();
-
-        if (!$response->successful()) {
-            throw new \Exception($data['error_description'] ?? $data['error'] ?? 'YouTube token refresh failed.');
-        }
-
-        $account->update([
-            'access_token' => $data['access_token'],
-            'token_expires_at' => now()->addSeconds($data['expires_in'] ?? 3600),
-        ]);
-
-        return $data['access_token'];
-    }
-
-    public function validToken(SocialAccount $account): string
-    {
-        if (!$account->token_expires_at || now()->greaterThan($account->token_expires_at->copy()->subMinutes(5))) {
-            return $this->refreshAccessToken($account);
-        }
-
-        return $account->access_token;
+        return $response->json();
     }
 
     public function getMyChannel(string $accessToken): ?array
@@ -75,24 +40,21 @@ class YoutubeService
             'mine' => 'true',
         ]);
 
-        $data = $response->json();
-
         if (!$response->successful()) {
-            throw new \Exception($data['error']['message'] ?? 'Unable to fetch YouTube channel.');
+            throw new \Exception('Failed to fetch YouTube channel: ' . $response->body());
         }
 
-        return $data['items'][0] ?? null;
+        $items = $response->json('items');
+
+        return $items[0] ?? null;
     }
 
     public function syncComments(SocialAccount $account): int
     {
         $accessToken = $this->validToken($account);
-
-        $totalComments = 0;
-
         $videos = $this->getVideos($account, $accessToken);
 
-        Log::info('YouTube videos found: ' . count($videos));
+        $totalNew = 0;
 
         foreach ($videos as $video) {
             $videoId = $video['id']['videoId']
@@ -103,186 +65,115 @@ class YoutubeService
                 continue;
             }
 
-            $storedPost = SocialPost::updateOrCreate(
-                [
-                    'platform_post_id' => $videoId,
-                    'platform' => 'youtube',
-                ],
-                [
-                    'organization_id' => $account->organization_id,
-                    'social_account_id' => $account->id,
-                    'content' => $video['snippet']['title'] ?? '',
-                    'posted_at' => $video['snippet']['publishedAt'] ?? now(),
-                    'raw_payload' => $video,
-                ]
-            );
-
-            $threads = $this->getComments($accessToken, $videoId);
-
-            foreach ($threads as $thread) {
-                $topLevelComment = data_get($thread, 'snippet.topLevelComment');
-
-                if (!$topLevelComment) {
-                    continue;
-                }
-
-                $topLevelCommentId = data_get($topLevelComment, 'id');
-
-                $storedRootComment = $this->storeYouTubeComment(
-                    account: $account,
-                    storedPost: $storedPost,
-                    comment: $topLevelComment,
-                    parentComment: null,
-                    isOwnComment: false
-                );
-
-                if ($storedRootComment?->wasRecentlyCreated) {
-                    $totalComments++;
-                }
-
-                $replies = data_get($thread, 'replies.comments', []);
-
-                foreach ($replies as $reply) {
-                    $replyParentId = data_get($reply, 'snippet.parentId');
-
-                    // Resolve the actual parent in DB instead of always using root
-                    $actualParent = $storedRootComment;
-
-                    if ($replyParentId && $replyParentId !== $topLevelCommentId) {
-                        $actualParent = SocialComment::where('platform', 'youtube')
-                            ->where('platform_comment_id', $replyParentId)
-                            ->first();
-
-                        if (!$actualParent) {
-                            $actualParent = $storedRootComment;
-                        }
-                    }
-
-                    $storedReply = $this->storeYouTubeComment(
-                        account: $account,
-                        storedPost: $storedPost,
-                        comment: $reply,
-                        parentComment: $actualParent,
-                        isOwnComment: $this->isOwnYouTubeComment($account, $reply)
-                    );
-
-                    if ($storedReply?->wasRecentlyCreated) {
-                        $totalComments++;
-                    }
-                }
-            }
+            $totalNew += $this->syncNewCommentsForVideo($account, $videoId, $accessToken);
         }
 
-        $account->update([
-            'last_synced_at' => now(),
-        ]);
-
-        return $totalComments;
-    }
-
-    /**
-     * Sync only new comments for a specific video (used by webhook).
-     * Fetches the latest threads and stores only comments not already in DB.
-     */
-    public function syncNewCommentsForVideo(SocialAccount $account, string $videoId): int
-    {
-        $accessToken = $this->validToken($account);
-
-        $totalNew = 0;
-
-        $storedPost = SocialPost::updateOrCreate(
-            [
-                'platform_post_id' => $videoId,
-                'platform' => 'youtube',
-            ],
-            [
-                'organization_id' => $account->organization_id,
-                'social_account_id' => $account->id,
-                'content' => '',
-                'posted_at' => now(),
-            ]
-        );
-
-        $threads = $this->getComments($accessToken, $videoId);
-
-        foreach ($threads as $thread) {
-            $topLevelComment = data_get($thread, 'snippet.topLevelComment');
-
-            if (!$topLevelComment) {
-                continue;
-            }
-
-            $topLevelCommentId = data_get($topLevelComment, 'id');
-
-            $existing = SocialComment::where('platform', 'youtube')
-                ->where('platform_comment_id', $topLevelCommentId)
-                ->first();
-
-            if (!$existing) {
-                $this->storeYouTubeComment(
-                    account: $account,
-                    storedPost: $storedPost,
-                    comment: $topLevelComment,
-                    parentComment: null,
-                    isOwnComment: false
-                );
-                $totalNew++;
-            }
-
-            $storedRootComment = SocialComment::where('platform', 'youtube')
-                ->where('platform_comment_id', $topLevelCommentId)
-                ->first();
-
-            if (!$storedRootComment) {
-                continue;
-            }
-
-            $replies = data_get($thread, 'replies.comments', []);
-
-            foreach ($replies as $reply) {
-                $replyId = data_get($reply, 'id');
-
-                $replyExists = SocialComment::where('platform', 'youtube')
-                    ->where('platform_comment_id', $replyId)
-                    ->exists();
-
-                if ($replyExists) {
-                    continue;
-                }
-
-                $replyParentId = data_get($reply, 'snippet.parentId');
-                $actualParent = $storedRootComment;
-
-                if ($replyParentId && $replyParentId !== $topLevelCommentId) {
-                    $foundParent = SocialComment::where('platform', 'youtube')
-                        ->where('platform_comment_id', $replyParentId)
-                        ->first();
-
-                    if ($foundParent) {
-                        $actualParent = $foundParent;
-                    }
-                }
-
-                $storedReply = $this->storeYouTubeComment(
-                    account: $account,
-                    storedPost: $storedPost,
-                    comment: $reply,
-                    parentComment: $actualParent,
-                    isOwnComment: $this->isOwnYouTubeComment($account, $reply)
-                );
-
-                if ($storedReply?->wasRecentlyCreated) {
-                    $totalNew++;
-                }
-            }
-        }
-
-        Log::info('YouTube webhook sync: new comments fetched', [
-            'video_id' => $videoId,
-            'total_new' => $totalNew,
-        ]);
+        $account->update(['last_synced_at' => now()]);
 
         return $totalNew;
+    }
+
+    public function syncNewCommentsForVideo(SocialAccount $account, string $videoId, ?string $accessToken = null): int
+    {
+        $accessToken = $accessToken ?: $this->validToken($account);
+
+        $storedPost = SocialPost::where('platform', 'youtube')
+            ->where('platform_post_id', $videoId)
+            ->where('social_account_id', $account->id)
+            ->first();
+
+        if (!$storedPost) {
+            $videoData = $this->getVideoDetails($videoId, $accessToken);
+
+            $storedPost = SocialPost::create([
+                'organization_id' => $account->organization_id,
+                'social_account_id' => $account->id,
+                'platform' => 'youtube',
+                'platform_post_id' => $videoId,
+                'content' => $videoData['title'] ?? '',
+                'url' => "https://www.youtube.com/watch?v={$videoId}",
+                'posted_at' => now(),
+                'metadata' => [
+                    'snippet' => $videoData,
+                ],
+            ]);
+        }
+
+        $totalNew = 0;
+        $sinceId = $account->metadata['last_synced_comment_id'] ?? null;
+
+        $threads = $this->getCommentThreads($accessToken, $videoId, $sinceId);
+
+        foreach ($threads as $thread) {
+            $topLevelCommentId = data_get($thread, 'id');
+            $totalNew += $this->processCommentThread($account, $storedPost, $thread, $topLevelCommentId);
+
+            if ($topLevelCommentId) {
+                $account->update([
+                    'metadata' => array_merge($account->metadata ?? [], [
+                        'last_synced_comment_id' => $topLevelCommentId,
+                    ]),
+                ]);
+            }
+        }
+
+        return $totalNew;
+    }
+
+    private function processCommentThread(SocialAccount $account, SocialPost $storedPost, array $thread, string $topLevelCommentId): int
+    {
+        $snippet = data_get($thread, 'snippet.topLevelComment.snippet', []);
+        $commentId = data_get($thread, 'snippet.topLevelComment.id');
+
+        if (!$commentId) {
+            return 0;
+        }
+
+        $exists = SocialComment::where('platform', 'youtube')
+            ->where('platform_comment_id', $commentId)
+            ->exists();
+
+        if ($exists) {
+            return 0;
+        }
+
+        $authorName = data_get($snippet, 'authorDisplayName', 'Unknown');
+        $authorAvatar = data_get($snippet, 'authorProfileImageUrl');
+        $content = data_get($snippet, 'textDisplay', '');
+        $commentedAt = data_get($snippet, 'publishedAt', now()->toIso8601String());
+
+        $parentId = data_get($thread, 'snippet.parentId');
+        $rootId = $parentId ?: $commentId;
+
+        $parentComment = null;
+        if ($parentId) {
+            $parentComment = SocialComment::where('platform', 'youtube')
+                ->where('platform_comment_id', $parentId)
+                ->first();
+        }
+
+        SocialComment::create([
+            'organization_id' => $account->organization_id,
+            'social_account_id' => $account->id,
+            'social_post_id' => $storedPost->id,
+            'platform' => 'youtube',
+            'platform_comment_id' => $commentId,
+            'platform_parent_id' => $parentId,
+            'root_id' => $rootId,
+            'parent_id' => $parentComment?->id,
+            'author_name' => $authorName,
+            'author_avatar_url' => $authorAvatar,
+            'author_id' => data_get($snippet, 'authorChannelId.value'),
+            'content' => $content,
+            'direction' => 'inbound',
+            'status' => 'new',
+            'commented_at' => $commentedAt,
+            'metadata' => [
+                'like_count' => data_get($snippet, 'likeCount', 0),
+            ],
+        ]);
+
+        return 1;
     }
 
     public function getVideos(SocialAccount $account, string $accessToken): array
@@ -329,90 +220,68 @@ class YoutubeService
         return $data['items'] ?? [];
     }
 
-    public function replyToComment(SocialAccount $account, string $parentCommentId, string $message): array
+    public function replyToComment(SocialAccount $account, string $commentId, string $message): array
     {
         $accessToken = $this->validToken($account);
 
-        $payload = [
+        $response = Http::withToken($accessToken)->post("{$this->baseUrl}/comments", [
+            'part' => 'snippet',
             'snippet' => [
-                'parentId' => $parentCommentId,
+                'parentId' => $commentId,
                 'textOriginal' => $message,
             ],
-        ];
-
-        Log::info('YouTube reply payload', [
-            'parent_id' => $parentCommentId,
-            'message_length' => strlen($message),
         ]);
-
-        $response = Http::withToken($accessToken)->post("{$this->baseUrl}/comments?part=snippet", $payload);
-
-        $data = $response->json();
 
         if (!$response->successful()) {
-            Log::error('YouTube reply API error', [
-                'parent_id' => $parentCommentId,
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
-            throw new \Exception($data['error']['message'] ?? 'Unable to reply to YouTube comment.');
+            throw new \Exception($response->json('error.message') ?? 'Failed to post YouTube reply.');
         }
 
-        return $data;
-    }
+        $reply = $response->json();
 
-    public function publishReply(SocialComment $comment, string $message, SocialAccount $account): array
-    {
-        // YouTube only supports one level of replies.
-        // If the comment is itself a reply to another comment (level 2+),
-        // we must reply to the top-level (root) comment instead.
-        $parentId = $comment->platform_root_id
-            ?: $comment->platform_comment_id;
-
-        Log::info('YouTube publishReply', [
-            'comment_id' => $comment->id,
-            'platform_comment_id' => $comment->platform_comment_id,
-            'platform_root_id' => $comment->platform_root_id,
-            'resolved_parent_id' => $parentId,
-        ]);
-
-        try {
-            $data = $this->replyToComment($account, $parentId, $message);
-
-            $comment->update([
-                'status' => 'replied',
-                'ai_response_text' => $message,
-                'replied_at' => now(),
-            ]);
-
-            return $data;
-        } catch (\Exception $e) {
-            Log::error('YouTube publish reply exception', [
-                'comment_id' => $comment->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            throw $e;
-        }
+        return [
+            'platform_comment_id' => $reply['id'],
+            'message' => $message,
+            'posted_at' => now()->toIso8601String(),
+        ];
     }
 
     /**
-     * Subscribe to real-time comment notifications for all videos of an account.
-     * YouTube uses PubSubHubbub (WebSub) — no Google Cloud setup needed.
-     *
-     * @return array{success: int, failed: int}
+     * Subscribe to PubSubHubbub for real-time comment notifications.
+     * Skips private/unlisted/deleted videos with comments disabled.
      */
     public function subscribeToVideoNotifications(SocialAccount $account): array
     {
         $accessToken = $this->validToken($account);
         $videos = $this->getVideos($account, $accessToken);
 
+        // Pre-fetch privacy + comment status to skip restricted videos
+        $videoIds = array_filter(array_map(function ($v) {
+            return $v['id']['videoId'] ?? $v['snippet']['resourceId']['videoId'] ?? null;
+        }, $videos));
+
+        $videoStatusMap = [];
+        if (!empty($videoIds)) {
+            $statusResponse = Http::withToken($accessToken)->get("{$this->baseUrl}/videos", [
+                'part' => 'status,snippet',
+                'id' => implode(',', array_slice($videoIds, 0, 50)),
+            ]);
+            if ($statusResponse->successful()) {
+                foreach ($statusResponse->json('items', []) as $item) {
+                    $videoStatusMap[$item['id']] = [
+                        'privacyStatus' => data_get($item, 'status.privacyStatus', 'public'),
+                        'commentStatus' => data_get($item, 'snippet.commentStatus', 'allowed'),
+                    ];
+                }
+            }
+        }
+
         $webhookUrl = rtrim(config('app.url'), '/') . '/webhooks/youtube';
         $hubUrl = 'https://pubsubhubbub.appspot.com/subscribe';
 
         $success = 0;
         $failed = 0;
-        $videoIds = [];
+        $skipped = 0;
+        $subscribedVideoIds = [];
 
         foreach ($videos as $video) {
             $videoId = $video['id']['videoId']
@@ -423,7 +292,17 @@ class YoutubeService
                 continue;
             }
 
-            $videoIds[] = $videoId;
+            $vStatus = $videoStatusMap[$videoId] ?? ['privacyStatus' => 'public', 'commentStatus' => 'allowed'];
+            if ($vStatus['privacyStatus'] !== 'public') {
+                $skipped++;
+                continue;
+            }
+            if ($vStatus['commentStatus'] === 'disabled') {
+                $skipped++;
+                continue;
+            }
+
+            $subscribedVideoIds[] = $videoId;
 
             $topicUrl = "https://www.youtube.com/xml/feeds/videos.xml?video_id={$videoId}";
 
@@ -432,14 +311,14 @@ class YoutubeService
                 'hub.topic' => $topicUrl,
                 'hub.verify' => 'sync',
                 'hub.mode' => 'subscribe',
-                'hub.lease_seconds' => 864000, // 10 days
+                'hub.lease_seconds' => 864000,
             ]);
 
             if ($response->successful()) {
                 $success++;
             } else {
                 $failed++;
-                Log::error('YouTube PubSubHubbub subscription failed', [
+                Log::warning('YouTube PubSubHubbub subscription failed', [
                     'video_id' => $videoId,
                     'status' => $response->status(),
                     'body' => $response->body(),
@@ -447,29 +326,27 @@ class YoutubeService
             }
         }
 
-        // Store subscribed video IDs for webhook matching
         $metadata = $account->metadata ?? [];
         $metadata['last_video_ids'] = array_slice(
-            array_merge($metadata['last_video_ids'] ?? [], $videoIds),
+            array_merge($metadata['last_video_ids'] ?? [], $subscribedVideoIds),
             -50
         );
-        $account->update([
-            'metadata' => $metadata,
-            'pubsub_subscribed' => true,
-            'pubsub_subscribed_at' => now()->toIso8601String(),
-        ]);
+        $metadata['pubsub_subscribed'] = true;
+        $metadata['pubsub_subscribed_at'] = now()->toIso8601String();
+        $account->update(['metadata' => $metadata]);
 
         Log::info('YouTube PubSubHubbub subscription completed', [
             'account_id' => $account->id,
             'subscribed' => $success,
             'failed' => $failed,
+            'skipped' => $skipped,
         ]);
 
-        return ['success' => $success, 'failed' => $failed];
+        return ['success' => $success, 'failed' => $failed, 'skipped' => $skipped];
     }
 
     /**
-     * Unsubscribe from video notifications for an account.
+     * Unsubscribe from video notifications.
      */
     public function unsubscribeFromVideoNotifications(SocialAccount $account): void
     {
@@ -495,137 +372,114 @@ class YoutubeService
                 'hub.mode' => 'unsubscribe',
             ]);
         }
+
+        $metadata = $account->metadata ?? [];
+        $metadata['pubsub_subscribed'] = false;
+        $account->update(['metadata' => $metadata]);
     }
 
-    private function storeYouTubeComment(
-        SocialAccount $account,
-        SocialPost $storedPost,
-        array $comment,
-        ?SocialComment $parentComment = null,
-        bool $isOwnComment = false
-    ): ?SocialComment {
-        $commentId = $comment['id'] ?? null;
-        $snippet = $comment['snippet'] ?? [];
+    private function getVideoDetails(string $videoId, string $accessToken): array
+    {
+        $response = Http::withToken($accessToken)->get("{$this->baseUrl}/videos", [
+            'part' => 'snippet',
+            'id' => $videoId,
+        ]);
 
-        if (!$commentId) {
-            return null;
+        if (!$response->successful()) {
+            return ['title' => "Video {$videoId}"];
         }
 
-        $authorId = data_get($snippet, 'authorChannelId.value')
-            ?? $snippet['authorDisplayName']
-            ?? null;
+        $items = $response->json('items');
 
-        if (!$authorId) {
-            Log::warning('YouTube comment missing author id', [
-                'comment_id' => $commentId,
-                'comment' => $comment,
-            ]);
+        return $items[0]['snippet'] ?? ['title' => "Video {$videoId}"];
+    }
 
-            return null;
+    private function getCommentThreads(string $accessToken, string $videoId, ?string $sinceId = null): array
+    {
+        $response = Http::withToken($accessToken)->get("{$this->baseUrl}/commentThreads", [
+            'part' => 'snippet,replies',
+            'videoId' => $videoId,
+            'maxResults' => 100,
+            'order' => 'time',
+            'textFormat' => 'plainText',
+        ]);
+
+        if (!$response->successful()) {
+            $reason = $response->json('error.errors.0.reason');
+
+            if (in_array($reason, ['commentsDisabled', 'videoNotFound'])) {
+                return [];
+            }
+
+            return [];
         }
 
-        $platformParentId = $snippet['parentId'] ?? null;
+        $threads = $response->json('items') ?? [];
 
-        $rootId = null;
-        $platformRootId = $commentId;
+        if ($sinceId) {
+            $filtered = [];
+            $foundSince = false;
 
-        if ($parentComment) {
-            $rootId = $parentComment->root_id ?: $parentComment->id;
-            $platformRootId = $parentComment->platform_root_id ?: $parentComment->platform_comment_id;
-        }
+            foreach ($threads as $thread) {
+                $threadId = data_get($thread, 'id');
 
-        $storedComment = SocialComment::updateOrCreate(
-            [
-                'platform_comment_id' => $commentId,
-                'platform' => 'youtube',
-            ],
-            [
-                'organization_id' => $account->organization_id,
-                'social_account_id' => $account->id,
-                'social_post_id' => $storedPost->id,
+                if ($threadId === $sinceId) {
+                    $foundSince = true;
+                    break;
+                }
 
-                'parent_id' => $parentComment?->id,
-                'root_id' => $rootId,
+                $filtered[] = $thread;
+            }
 
-                'platform_parent_id' => $platformParentId,
-                'platform_root_id' => $platformRootId,
-
-                'author_name' => $snippet['authorDisplayName'] ?? 'Unknown',
-                'platform_author_id' => $authorId,
-                'content' => $snippet['textOriginal'] ?? $snippet['textDisplay'] ?? '',
-
-                'direction' => $isOwnComment ? 'outbound' : 'inbound',
-                'sender_type' => $isOwnComment ? 'page' : 'customer',
-                'is_own_comment' => $isOwnComment,
-
-                'raw_payload' => $comment,
-
-                'commented_at' => isset($snippet['publishedAt'])
-                    ? \Carbon\Carbon::parse($snippet['publishedAt'])->setTimezone(config('app.timezone'))
-                    : now()->setTimezone(config('app.timezone')),
-
-                'status' => $isOwnComment ? 'sent' : 'new',
-            ]
-        );
-
-        if (!$storedComment->root_id) {
-            $storedComment->update([
-                'root_id' => $storedComment->id,
-                'platform_root_id' => $storedComment->platform_comment_id,
-            ]);
-        }
-
-        if ($parentComment && $storedComment->wasRecentlyCreated) {
-            $parentComment->increment('reply_count');
-
-            if ($parentComment->root_id) {
-                SocialComment::where('id', $parentComment->root_id)
-                    ->increment('reply_count');
+            if ($foundSince) {
+                return $filtered;
             }
         }
 
-        if ($storedComment->wasRecentlyCreated) {
-            if ($this->shouldAnalyzeComment($account, $storedComment)) {
-                AnalyzeWithOllama::dispatch($storedComment);
-            }
+        return $threads;
+    }
+
+    private function validToken(SocialAccount $account): string
+    {
+        if ($account->token_expires_at && $account->token_expires_at->isFuture()) {
+            return $account->access_token;
         }
 
-        return $storedComment;
+        if (!$account->refresh_token) {
+            throw new \Exception('YouTube access token expired and no refresh token available.');
+        }
+
+        $response = Http::asForm()->post('https://oauth2.googleapis.com/token', [
+            'client_id' => env('YOUTUBE_CLIENT_ID'),
+            'client_secret' => env('YOUTUBE_CLIENT_SECRET'),
+            'refresh_token' => $account->refresh_token,
+            'grant_type' => 'refresh_token',
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('Failed to refresh YouTube token.');
+        }
+
+        $tokenData = $response->json();
+
+        $account->update([
+            'access_token' => $tokenData['access_token'],
+            'token_expires_at' => now()->addSeconds($tokenData['expires_in'] ?? 3600),
+        ]);
+
+        return $tokenData['access_token'];
     }
 
     private function isOwnYouTubeComment(SocialAccount $account, array $comment): bool
     {
-        $authorChannelId = data_get($comment, 'snippet.authorChannelId.value');
+        $channelId = data_get($account->metadata, 'channel.snippet.channelId');
 
-        if (!$authorChannelId || !$account->platform_account_id) {
+        if (!$channelId) {
             return false;
         }
 
-        return (string) $authorChannelId === (string) $account->platform_account_id;
-    }
+        $commentAuthorChannelId = data_get($comment, 'snippet.authorChannelId.value');
 
-    private function shouldAnalyzeComment(
-        SocialAccount $account,
-        SocialComment $comment
-    ): bool {
-        if (!$comment->wasRecentlyCreated) {
-            return false;
-        }
-
-        if ($comment->is_own_comment) {
-            return false;
-        }
-
-        if (!$account->auto_reply_started_at) {
-            return false;
-        }
-
-        if (!$comment->commented_at) {
-            return false;
-        }
-
-        return $comment->commented_at->gte(
-            $account->auto_reply_started_at
-        );
+        return $commentAuthorChannelId === $channelId;
     }
 }

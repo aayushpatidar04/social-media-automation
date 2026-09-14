@@ -1,10 +1,11 @@
 <?php
 
-// app/Jobs/AnalyzeCommentWithAI.php - UPDATED FOR OLLAMA
+// app/Jobs/AnalyzeWithOllama.php - AI Analysis using Ollama
 
 namespace App\Jobs;
 
 use App\Models\SocialComment;
+use App\Models\Lead;
 use App\Services\OllamaService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -17,53 +18,28 @@ class AnalyzeWithOllama implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $timeout = 120; // Ollama might be slower than API
-    public $tries = 2;
-    public $maxExceptions = 2;
+    public int $timeout = 120;
+    public int $tries = 2;
 
-    private SocialComment $comment;
-
-    public function __construct(SocialComment $comment)
+    public function __construct(public SocialComment $comment)
     {
-        $this->comment = $comment;
     }
 
     public function handle()
     {
         try {
-            Log::info('Starting AI analysis for comment: ' . $this->comment->id);
-
             $service = new OllamaService();
 
-            // Check if Ollama is available
-            if (!$service->isAvailable()) {
-                Log::error('Ollama service not available at ' . env('OLLAMA_URL', 'http://localhost:11434'));
-                Log::warning('AI analysis skipped - Ollama not running');
-                $this->comment->update([
-                    'ai_analysis_failed' => true,
-                    'ai_error_message' => 'Ollama service not available',
-                    'ai_analysis_completed_at' => now(),
-                ]);
-                return;
+            $analysisText = $this->comment->content;
+            if (strlen($analysisText) > 1000) {
+                $analysisText = substr($analysisText, 0, 1000);
             }
 
-            // Build a unified prompt with conversation context
-            $conversationHistory = $this->buildConversationHistory($this->comment);
-
-            $analysisText = "
-                Conversation History:
-                {$conversationHistory}
-
-                Current Customer Message:
-                {$this->comment->content}
-                ";
-
-            // Run the 3 analysis calls (sentiment, intent, lead)
+            // Run analysis calls
             $sentimentAnalysis = $service->analyzeSentiment($analysisText);
             $intentAnalysis = $service->classifyIntent($analysisText);
             $leadAnalysis = $service->detectLead($analysisText);
 
-            // Compile results
             $analysis = [
                 'sentiment' => $sentimentAnalysis['sentiment'],
                 'sentiment_score' => $sentimentAnalysis['score'],
@@ -90,79 +66,66 @@ class AnalyzeWithOllama implements ShouldQueue
 
             Log::info('Comment updated with analysis: ' . $this->comment->id);
 
-            // If it's a potential lead or support request, mark for priority handling
+            // If it's a potential lead or support request, create Lead record
             if ($analysis['is_lead'] || $analysis['intent'] === 'sales' || $analysis['intent'] === 'support') {
                 Log::info('Priority comment detected - lead/sales/support', [
                     'comment_id' => $this->comment->id,
                     'analysis' => $analysis,
                 ]);
+
+                $this->createOrUpdateLead($analysis);
             }
 
             // Always generate AI response for the comment
             GenerateOllamaResponse::dispatch($this->comment);
 
-            // Broadcast update
-            try {
-                // broadcast(new \App\Events\CommentAnalyzed($this->comment));
-            } catch (\Exception $e) {
-                Log::warning('Could not broadcast event: ' . $e->getMessage());
-            }
-
         } catch (\Exception $e) {
-            Log::error('AI analysis failed for comment: ' . $this->comment->id);
-            Log::error('Error: ' . $e->getMessage());
-            Log::error('Trace: ' . $e->getTraceAsString());
+            Log::error('Ollama analysis failed: ' . $e->getMessage());
 
             $this->comment->update([
+                'sentiment' => 'pending',
+                'intent' => 'general',
+                'lead_score' => 0,
+                'is_lead' => false,
                 'ai_analysis_failed' => true,
                 'ai_error_message' => $e->getMessage(),
                 'ai_analysis_completed_at' => now(),
-                'sentiment' => 'pending',
-                'intent' => 'pending',
+            ]);
+        }
+    }
+
+    private function createOrUpdateLead(array $analysis): void
+    {
+        $existingLead = Lead::where('social_comment_id', $this->comment->id)->first();
+
+        if ($existingLead) {
+            $existingLead->update([
+                'lead_score' => $analysis['lead_score'],
+                'lead_status' => $existingLead->lead_status === 'new' ? 'new' : $existingLead->lead_status,
             ]);
 
-            throw $e;
+            Log::info('Lead updated: ' . $existingLead->id);
+            return;
         }
-    }
 
-    public function failed(\Exception $exception)
-    {
-        Log::error('AI analysis job permanently failed for comment: ' . $this->comment->id);
-        Log::error('Reason: ' . $exception->getMessage());
+        $leadType = match ($analysis['intent']) {
+            'sales' => 'sales',
+            'support' => 'support',
+            default => 'sales',
+        };
 
-        $this->comment->update([
-            'ai_analysis_failed' => true,
-            'ai_error_message' => 'Job failed after ' . $this->tries . ' attempts',
-            'ai_analysis_completed_at' => now(),
-            'sentiment' => 'pending',
-            'intent' => 'pending',
+        Lead::create([
+            'organization_id' => $this->comment->socialAccount->organization_id,
+            'social_comment_id' => $this->comment->id,
+            'platform_author_id' => $this->comment->author_id,
+            'author_name' => $this->comment->author_name,
+            'author_profile_url' => $this->comment->author_avatar_url,
+            'initial_message' => substr($this->comment->content, 0, 500),
+            'lead_type' => $leadType,
+            'lead_score' => $analysis['lead_score'],
+            'lead_status' => 'new',
         ]);
-    }
 
-    private function buildConversationHistory(SocialComment $comment): string
-    {
-        $rootId = $comment->root_id ?: $comment->id;
-
-        $messages = SocialComment::where('root_id', $rootId)
-            ->where('id', '!=', $comment->id)
-            ->orderBy('commented_at')
-            ->limit(20)
-            ->get();
-
-        if ($messages->isEmpty()) {
-            return 'No previous conversation history.';
-        }
-
-        $history = [];
-
-        foreach ($messages as $message) {
-            $role = $message->direction === 'outbound'
-                ? 'Assistant'
-                : 'Customer';
-
-            $history[] = "{$role}: {$message->content}";
-        }
-
-        return implode("\n", $history);
+        Log::info('Lead created for comment: ' . $this->comment->id);
     }
 }

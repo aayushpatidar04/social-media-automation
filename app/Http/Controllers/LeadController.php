@@ -1,7 +1,5 @@
 <?php
 
-// app/Http/Controllers/LeadController.php
-
 namespace App\Http\Controllers;
 
 use App\Models\Lead;
@@ -15,19 +13,47 @@ use Illuminate\Support\Facades\Auth;
 
 class LeadController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $organization = Auth::user()->organization;
 
-        $leads = $organization->leads()
-            ->with(['socialComment', 'assignedTo'])
-            ->latest('created_at')
-            ->paginate(20);
+        $query = $organization->leads()
+            ->with(['socialComment.socialAccount', 'assignedTo']);
+
+        // Apply filters
+        if ($request->filled('status')) {
+            $query->where('lead_status', $request->status);
+        }
+
+        if ($request->filled('type')) {
+            $query->where('lead_type', $request->type);
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('author_name', 'like', "%{$search}%")
+                    ->orWhere('company_name', 'like', "%{$search}%")
+                    ->orWhere('contact_email', 'like', "%{$search}%");
+            });
+        }
+
+        $leads = $query->latest('created_at')->paginate(20);
+
+        // Stats for the filter sidebar
+        $allLeads = $organization->leads();
+        $stats = [
+            'new' => (clone $allLeads)->where('lead_status', 'new')->count(),
+            'contacted' => (clone $allLeads)->where('lead_status', 'contacted')->count(),
+            'qualified' => (clone $allLeads)->where('lead_status', 'qualified')->count(),
+            'converted' => (clone $allLeads)->where('lead_status', 'converted')->count(),
+            'lost' => (clone $allLeads)->where('lead_status', 'lost')->count(),
+        ];
 
         return Inertia::render('Leads/Index', [
             'leads' => $leads,
-            'filters' => request()->only(['status', 'type']),
-            'team_members' => $organization->users()->where('id', '!=', Auth::id())->get(),
+            'stats' => $stats,
+            'filters' => $request->only(['status', 'type', 'search']),
         ]);
     }
 
@@ -36,7 +62,7 @@ class LeadController extends Controller
         $this->authorize('view', $lead);
 
         return Inertia::render('Leads/Show', [
-            'lead' => $lead->load(['socialComment', 'assignedTo', 'organization']),
+            'lead' => $lead->load(['socialComment.socialAccount', 'assignedTo', 'organization']),
         ]);
     }
 
@@ -53,7 +79,6 @@ class LeadController extends Controller
             'assigned_at' => now(),
         ]);
 
-        // Log activity
         \App\Models\ActivityLog::create([
             'organization_id' => $lead->organization_id,
             'user_id' => Auth::id(),
@@ -78,7 +103,6 @@ class LeadController extends Controller
             'lead_status' => $request->status,
         ]);
 
-        // Log activity
         \App\Models\ActivityLog::create([
             'organization_id' => $lead->organization_id,
             'user_id' => Auth::id(),
@@ -104,7 +128,6 @@ class LeadController extends Controller
             'last_contacted_at' => now(),
         ]);
 
-        // Log activity
         \App\Models\ActivityLog::create([
             'organization_id' => $lead->organization_id,
             'user_id' => Auth::id(),
@@ -144,4 +167,3 @@ class LeadController extends Controller
         return response()->json($leads);
     }
 }
-
