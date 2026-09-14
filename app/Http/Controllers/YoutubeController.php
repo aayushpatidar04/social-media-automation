@@ -121,6 +121,50 @@ class YoutubeController extends Controller
         ]);
     }
 
+    /**
+     * Subscribe to real-time comment notifications via PubSubHubbub.
+     * URL: POST /youtube/subscribe/{account}
+     */
+    public function subscribe(Request $request, SocialAccount $account, YoutubeService $youtube)
+    {
+        if ($account->organization_id !== Auth::user()->organization_id) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if ($account->platform !== 'youtube') {
+            return response()->json(['error' => 'Invalid YouTube account.'], 422);
+        }
+
+        $result = $youtube->subscribeToVideoNotifications($account);
+
+        return response()->json([
+            'message' => 'YouTube webhook subscription completed.',
+            'subscribed' => $result['success'],
+            'failed' => $result['failed'],
+        ]);
+    }
+
+    /**
+     * Unsubscribe from real-time notifications.
+     * URL: POST /youtube/unsubscribe/{account}
+     */
+    public function unsubscribe(Request $request, SocialAccount $account, YoutubeService $youtube)
+    {
+        if ($account->organization_id !== Auth::user()->organization_id) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if ($account->platform !== 'youtube') {
+            return response()->json(['error' => 'Invalid YouTube account.'], 422);
+        }
+
+        $youtube->unsubscribeFromVideoNotifications($account);
+
+        return response()->json([
+            'message' => 'YouTube webhook unsubscribed.',
+        ]);
+    }
+
     public function reply(Request $request, SocialComment $comment, YoutubeService $youtube)
     {
         $request->validate([

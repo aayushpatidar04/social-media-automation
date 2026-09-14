@@ -3,6 +3,8 @@
 namespace App\Jobs;
 
 use App\Models\SocialAccount;
+use App\Models\SocialComment;
+use App\Models\SocialPost;
 use App\Services\FacebookService;
 use App\Services\InstagramService;
 use Illuminate\Bus\Queueable;
@@ -15,7 +17,7 @@ use Illuminate\Support\Facades\Log;
 
 class ProcessMetaWebhook implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use CascadeDeleteComments, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $timeout = 120;
     public int $tries = 2;
@@ -47,10 +49,17 @@ class ProcessMetaWebhook implements ShouldQueue
     {
         $value = $change['value'] ?? [];
 
-        if (($value['verb'] ?? null) !== 'add') {
-            return;
-        }
+        $verb = $value['verb'] ?? null;
 
+        if ($verb === 'add') {
+            $this->handleFacebookFeedAdd($entry, $value);
+        } elseif ($verb === 'remove') {
+            $this->handleFacebookFeedRemove($entry, $value);
+        }
+    }
+
+    private function handleFacebookFeedAdd(array $entry, array $value): void
+    {
         $pageId = $entry['id'] ?? null;
 
         if (!$pageId) {
@@ -84,11 +93,63 @@ class ProcessMetaWebhook implements ShouldQueue
         Log::info('Unhandled Facebook feed item', [
             'page_id' => $pageId,
             'item' => $item,
-            'value' => $value,
         ]);
     }
 
+    private function handleFacebookFeedRemove(array $entry, array $value): void
+    {
+        $item = $value['item'] ?? null;
+        $pageId = $entry['id'] ?? null;
+
+        if (!$pageId) {
+            return;
+        }
+
+        $account = SocialAccount::where('platform_account_id', $pageId)
+            ->where('platform', 'facebook')
+            ->where('is_active', true)
+            ->first();
+
+        if (!$account) {
+            Log::warning('Facebook webhook account not found for remove', [
+                'page_id' => $pageId,
+            ]);
+            return;
+        }
+
+        if ($item === 'comment') {
+            $commentId = $value['comment_id'] ?? null;
+
+            if ($commentId) {
+                Log::info('Facebook comment deleted', ['comment_id' => $commentId]);
+                $this->cascadeDeleteComment('facebook', $commentId);
+            }
+        }
+
+        if (in_array($item, ['status', 'photo', 'video', 'post', 'share'], true)) {
+            $postId = $value['post_id'] ?? $value['id'] ?? null;
+
+            if ($postId) {
+                Log::info('Facebook post deleted', ['post_id' => $postId]);
+                $this->cascadeDeletePost('facebook', $postId);
+            }
+        }
+    }
+
     private function handleInstagramComment(array $entry, array $change): void
+    {
+        $value = $change['value'] ?? [];
+
+        $verb = $value['verb'] ?? null;
+
+        if ($verb === 'add') {
+            $this->handleInstagramCommentAdd($entry, $change);
+        } elseif ($verb === 'remove') {
+            $this->handleInstagramCommentRemove($entry, $change);
+        }
+    }
+
+    private function handleInstagramCommentAdd(array $entry, array $change): void
     {
         $value = $change['value'] ?? [];
 
@@ -113,6 +174,20 @@ class ProcessMetaWebhook implements ShouldQueue
         app(InstagramService::class)->syncSingleCommentFromWebhook($account, $commentId);
     }
 
+    private function handleInstagramCommentRemove(array $entry, array $change): void
+    {
+        $value = $change['value'] ?? [];
+
+        $commentId = $value['id'] ?? null;
+
+        if (!$commentId) {
+            return;
+        }
+
+        Log::info('Instagram comment deleted', ['comment_id' => $commentId]);
+        $this->cascadeDeleteComment('instagram', $commentId);
+    }
+
     private function findFacebookAccountByInstagramId(?string $instagramAccountId): ?SocialAccount
     {
         if (!$instagramAccountId) {
@@ -127,7 +202,7 @@ class ProcessMetaWebhook implements ShouldQueue
             $pageId = $account->platform_account_id;
             $pageToken = $account->access_token;
 
-            $response = Http::get("https://graph.facebook.com/v25.0/{$pageId}", [
+            $response = Http::get("https://graph.facebook.com/{$pageId}", [
                 'fields' => 'connected_instagram_account',
                 'access_token' => $pageToken,
             ]);

@@ -121,13 +121,51 @@ class TwitterService
     {
         $accessToken = $this->validToken($account);
 
-        $tweets = $this->getMentions($account, $accessToken);
+        // Use since_id to only fetch new mentions since last sync
+        $sinceId = $account->metadata['last_synced_tweet_id'] ?? null;
 
-        Log::info('X mentions found', [
-            'count' => count($tweets),
+        $params = [
+            'max_results' => 100,
+            'tweet.fields' => 'id,text,author_id,created_at,conversation_id,referenced_tweets',
+            'expansions' => 'author_id',
+            'user.fields' => 'id,name,username',
+        ];
+
+        if ($sinceId) {
+            $params['since_id'] = $sinceId;
+        }
+
+        $response = Http::withToken($accessToken)->get(
+            "{$this->baseUrl}/users/{$account->platform_account_id}/mentions",
+            $params
+        );
+
+        $data = $response->json();
+
+        Log::info('X mentions response', [
+            'status' => $response->status(),
+            'since_id' => $sinceId,
+            'count' => count($data['data'] ?? []),
         ]);
 
+        if (!$response->successful()) {
+            throw new \Exception($data['detail'] ?? $data['title'] ?? 'Unable to fetch X mentions.');
+        }
+
+        $users = collect($data['includes']['users'] ?? [])->keyBy('id');
+
+        $tweets = collect($data['data'] ?? [])->map(function ($tweet) use ($users) {
+            $author = $users->get($tweet['author_id'] ?? '');
+
+            return [
+                ...$tweet,
+                'author_name' => $author['name'] ?? null,
+                'author_username' => $author['username'] ?? null,
+            ];
+        })->values()->toArray();
+
         $total = 0;
+        $maxTweetId = $sinceId;
 
         foreach ($tweets as $tweet) {
             $storedPost = SocialPost::updateOrCreate(
@@ -168,47 +206,22 @@ class TwitterService
                 }
             }
 
+            // Track highest tweet ID for next incremental sync
+            if (!$maxTweetId || intval($tweet['id']) > intval($maxTweetId)) {
+                $maxTweetId = $tweet['id'];
+            }
+        }
+
+        // Save cursor for next sync
+        if ($maxTweetId) {
+            $metadata = $account->metadata ?? [];
+            $metadata['last_synced_tweet_id'] = $maxTweetId;
+            $account->update(['metadata' => $metadata]);
         }
 
         $account->update(['last_synced_at' => now()]);
 
         return $total;
-    }
-
-    public function getMentions(SocialAccount $account, string $accessToken): array
-    {
-        $response = Http::withToken($accessToken)->get(
-            "{$this->baseUrl}/users/{$account->platform_account_id}/mentions",
-            [
-                'max_results' => 100,
-                'tweet.fields' => 'id,text,author_id,created_at,conversation_id,referenced_tweets',
-                'expansions' => 'author_id',
-                'user.fields' => 'id,name,username',
-            ]
-        );
-
-        $data = $response->json();
-
-        Log::info('X mentions response', [
-            'status' => $response->status(),
-            'body' => $response->body(),
-        ]);
-
-        if (!$response->successful()) {
-            throw new \Exception($data['detail'] ?? $data['title'] ?? 'Unable to fetch X mentions.');
-        }
-
-        $users = collect($data['includes']['users'] ?? [])->keyBy('id');
-
-        return collect($data['data'] ?? [])->map(function ($tweet) use ($users) {
-            $author = $users->get($tweet['author_id'] ?? '');
-
-            return [
-                ...$tweet,
-                'author_name' => $author['name'] ?? null,
-                'author_username' => $author['username'] ?? null,
-            ];
-        })->values()->toArray();
     }
 
     public function replyToTweet(SocialAccount $account, string $tweetId, string $message): array
@@ -223,6 +236,11 @@ class TwitterService
         ]);
 
         $data = $response->json();
+
+        Log::info('X reply response', [
+            'status' => $response->status(),
+            'body' => $response->body(),
+        ]);
 
         if (!$response->successful()) {
             throw new \Exception($data['detail'] ?? $data['title'] ?? 'Unable to reply on X.');
@@ -244,11 +262,8 @@ class TwitterService
 
             return $data;
         } catch (\Exception $e) {
-            Log::error('Twitter publish reply exception: ' . $e->getMessage());
-            return [
-                'error' => true,
-                'message' => $e->getMessage(),
-            ];
+            Log::error('X publish reply exception: ' . $e->getMessage());
+            throw $e;
         }
     }
 

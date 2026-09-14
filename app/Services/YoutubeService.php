@@ -180,6 +180,111 @@ class YoutubeService
         return $totalComments;
     }
 
+    /**
+     * Sync only new comments for a specific video (used by webhook).
+     * Fetches the latest threads and stores only comments not already in DB.
+     */
+    public function syncNewCommentsForVideo(SocialAccount $account, string $videoId): int
+    {
+        $accessToken = $this->validToken($account);
+
+        $totalNew = 0;
+
+        $storedPost = SocialPost::updateOrCreate(
+            [
+                'platform_post_id' => $videoId,
+                'platform' => 'youtube',
+            ],
+            [
+                'organization_id' => $account->organization_id,
+                'social_account_id' => $account->id,
+                'content' => '',
+                'posted_at' => now(),
+            ]
+        );
+
+        $threads = $this->getComments($accessToken, $videoId);
+
+        foreach ($threads as $thread) {
+            $topLevelComment = data_get($thread, 'snippet.topLevelComment');
+
+            if (!$topLevelComment) {
+                continue;
+            }
+
+            $topLevelCommentId = data_get($topLevelComment, 'id');
+
+            $existing = SocialComment::where('platform', 'youtube')
+                ->where('platform_comment_id', $topLevelCommentId)
+                ->first();
+
+            if (!$existing) {
+                $this->storeYouTubeComment(
+                    account: $account,
+                    storedPost: $storedPost,
+                    comment: $topLevelComment,
+                    parentComment: null,
+                    isOwnComment: false
+                );
+                $totalNew++;
+            }
+
+            $storedRootComment = SocialComment::where('platform', 'youtube')
+                ->where('platform_comment_id', $topLevelCommentId)
+                ->first();
+
+            if (!$storedRootComment) {
+                continue;
+            }
+
+            $replies = data_get($thread, 'replies.comments', []);
+
+            foreach ($replies as $reply) {
+                $replyId = data_get($reply, 'id');
+
+                $replyExists = SocialComment::where('platform', 'youtube')
+                    ->where('platform_comment_id', $replyId)
+                    ->exists();
+
+                if ($replyExists) {
+                    continue;
+                }
+
+                $replyParentId = data_get($reply, 'snippet.parentId');
+                $actualParent = $storedRootComment;
+
+                if ($replyParentId && $replyParentId !== $topLevelCommentId) {
+                    $foundParent = SocialComment::where('platform', 'youtube')
+                        ->where('platform_comment_id', $replyParentId)
+                        ->first();
+
+                    if ($foundParent) {
+                        $actualParent = $foundParent;
+                    }
+                }
+
+                $storedReply = $this->storeYouTubeComment(
+                    account: $account,
+                    storedPost: $storedPost,
+                    comment: $reply,
+                    parentComment: $actualParent,
+                    isOwnComment: $this->isOwnYouTubeComment($account, $reply)
+                );
+
+                if ($storedReply?->wasRecentlyCreated) {
+                    $totalNew++;
+                }
+            }
+        }
+
+        Log::info('YouTube webhook sync: new comments fetched', [
+            'video_id' => $videoId,
+            'total_new' => $totalNew,
+        ]);
+
+        return $totalNew;
+    }
+
     public function getVideos(SocialAccount $account, string $accessToken): array
     {
         $response = Http::withToken($accessToken)->get("{$this->baseUrl}/search", [
@@ -288,6 +393,103 @@ class YoutubeService
             ]);
 
             throw $e;
+        }
+    }
+
+    /**
+     * Subscribe to real-time comment notifications for all videos of an account.
+     * YouTube uses PubSubHubbub (WebSub) — no Google Cloud setup needed.
+     *
+     * @return array{success: int, failed: int}
+     */
+    public function subscribeToVideoNotifications(SocialAccount $account): array
+    {
+        $accessToken = $this->validToken($account);
+        $videos = $this->getVideos($account, $accessToken);
+
+        $webhookUrl = rtrim(config('app.url'), '/') . '/webhooks/youtube';
+        $hubUrl = 'https://pubsubhubbub.appspot.com/subscribe';
+
+        $success = 0;
+        $failed = 0;
+        $videoIds = [];
+
+        foreach ($videos as $video) {
+            $videoId = $video['id']['videoId']
+                ?? $video['snippet']['resourceId']['videoId']
+                ?? null;
+
+            if (!$videoId) {
+                continue;
+            }
+
+            $videoIds[] = $videoId;
+
+            $topicUrl = "https://www.youtube.com/xml/feeds/videos.xml?video_id={$videoId}";
+
+            $response = Http::asForm()->post($hubUrl, [
+                'hub.callback' => $webhookUrl,
+                'hub.topic' => $topicUrl,
+                'hub.verify' => 'sync',
+                'hub.mode' => 'subscribe',
+                'hub.lease_seconds' => 864000, // 10 days
+            ]);
+
+            if ($response->successful()) {
+                $success++;
+            } else {
+                $failed++;
+                Log::error('YouTube PubSubHubbub subscription failed', [
+                    'video_id' => $videoId,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+            }
+        }
+
+        // Store subscribed video IDs for webhook matching
+        $metadata = $account->metadata ?? [];
+        $metadata['last_video_ids'] = array_slice(
+            array_merge($metadata['last_video_ids'] ?? [], $videoIds),
+            -50
+        );
+        $account->update(['metadata' => $metadata]);
+
+        Log::info('YouTube PubSubHubbub subscription completed', [
+            'account_id' => $account->id,
+            'subscribed' => $success,
+            'failed' => $failed,
+        ]);
+
+        return ['success' => $success, 'failed' => $failed];
+    }
+
+    /**
+     * Unsubscribe from video notifications for an account.
+     */
+    public function unsubscribeFromVideoNotifications(SocialAccount $account): void
+    {
+        $videos = $this->getVideos($account, $this->validToken($account));
+
+        $hubUrl = 'https://pubsubhubbub.appspot.com/subscribe';
+        $webhookUrl = rtrim(config('app.url'), '/') . '/webhooks/youtube';
+
+        foreach ($videos as $video) {
+            $videoId = $video['id']['videoId']
+                ?? $video['snippet']['resourceId']['videoId']
+                ?? null;
+
+            if (!$videoId) {
+                continue;
+            }
+
+            $topicUrl = "https://www.youtube.com/xml/feeds/videos.xml?video_id={$videoId}";
+
+            Http::asForm()->post($hubUrl, [
+                'hub.callback' => $webhookUrl,
+                'hub.topic' => $topicUrl,
+                'hub.mode' => 'unsubscribe',
+            ]);
         }
     }
 

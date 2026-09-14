@@ -205,7 +205,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     // ============================================
-    // YouTUBE OAUTH & SYNC ROUTES
+    // YouTube OAUTH & SYNC ROUTES
     // ============================================
 
     Route::get('/auth/youtube/login', [YoutubeController::class, 'login'])
@@ -216,6 +216,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('youtube.sync');
     Route::post('/youtube/comments/{comment}/reply', [YoutubeController::class, 'reply'])
         ->name('youtube.comment.reply');
+    Route::post('/youtube/subscribe/{account}', [YoutubeController::class, 'subscribe'])
+        ->name('youtube.subscribe');
+    Route::post('/youtube/unsubscribe/{account}', [YoutubeController::class, 'unsubscribe'])
+        ->name('youtube.unsubscribe');
 
     // ============================================
     // Twitter OAUTH & SYNC ROUTES
@@ -233,7 +237,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/auth/linkedin/callback', [LinkedInController::class, 'callback'])->name('linkedin.callback');
     Route::post('/settings/social-accounts/{account}/linkedin-sync', [LinkedInController::class, 'sync'])->name('linkedin.sync');
     Route::post('/linkedin/comments/{comment}/reply', [LinkedInController::class, 'reply'])->name('linkedin.comment.reply');
-
 
     Route::get('/knowledge-sources', [KnowledgeSourceController::class, 'index'])
         ->name('knowledge-sources.index');
@@ -288,6 +291,8 @@ if (!function_exists('verifyFacebookSignature')) {
     }
 }
 
+Route::match(['get', 'post'], '/webhooks/youtube', [App\Http\Controllers\YoutubeWebhookController::class, 'handle']);
+Route::match(['get', 'post'], '/webhooks/linkedin', [App\Http\Controllers\LinkedInWebhookController::class, 'handle']);
 Route::match(['get', 'post'], '/webhooks/meta', [MetaWebhookController::class, 'handle']);
 
 require __DIR__ . '/auth.php';

@@ -24,9 +24,6 @@ class LinkedInService
             'openid',
             'profile',
             'email',
-
-            // These may become available after LinkedIn product approval.
-            // If OAuth fails due to invalid scope, remove these until approval.
             'w_member_social',
             'r_organization_social',
             'w_organization_social',
@@ -100,11 +97,6 @@ class LinkedInService
 
         $data = $response->json();
 
-        Log::info('LinkedIn organizations response', [
-            'status' => $response->status(),
-            'body' => $response->body(),
-        ]);
-
         if (!$response->successful()) {
             throw new \Exception($data['message'] ?? 'Unable to fetch LinkedIn organizations. Product approval may be pending.');
         }
@@ -135,10 +127,6 @@ class LinkedInService
         $accessToken = $this->validToken($account);
 
         $posts = $this->getOrganizationPosts($account, $accessToken);
-
-        Log::info('LinkedIn posts found', [
-            'count' => count($posts),
-        ]);
 
         $totalComments = 0;
 
@@ -202,7 +190,6 @@ class LinkedInService
                         AnalyzeWithOllama::dispatch($storedComment);
                     }
                 }
-
             }
         }
 
@@ -227,11 +214,6 @@ class LinkedInService
 
         $data = $response->json();
 
-        Log::info('LinkedIn posts response', [
-            'status' => $response->status(),
-            'body' => $response->body(),
-        ]);
-
         if (!$response->successful()) {
             throw new \Exception($data['message'] ?? 'Unable to fetch LinkedIn posts. Product approval may be pending.');
         }
@@ -252,17 +234,87 @@ class LinkedInService
 
         $data = $response->json();
 
-        Log::info('LinkedIn comments response', [
-            'post_urn' => $postUrn,
-            'status' => $response->status(),
-            'body' => $response->body(),
-        ]);
-
         if (!$response->successful()) {
             throw new \Exception($data['message'] ?? 'Unable to fetch LinkedIn comments. Community Management API approval may be pending.');
         }
 
         return $data['elements'] ?? [];
+    }
+
+    /**
+     * Process a single comment event from LinkedIn webhook.
+     * Fetches the latest comment details from LinkedIn and stores it.
+     */
+    public function syncSingleCommentFromWebhook(SocialAccount $account, string $commentUrn): ?SocialComment
+    {
+        $accessToken = $this->validToken($account);
+
+        // Extract post URN from comment URN
+        $parts = explode(':', $commentUrn);
+        $postUrn = implode(':', array_slice($parts, 0, 4));
+
+        $response = Http::withToken($accessToken)
+            ->withHeaders([
+                'LinkedIn-Version' => '202405',
+                'X-Restli-Protocol-Version' => '2.0.0',
+            ])
+            ->get("{$this->baseUrl}/rest/socialActions/{$postUrn}/comments/{$commentUrn}");
+
+        if (!$response->successful()) {
+            Log::error('LinkedIn: failed to fetch single comment', [
+                'comment_urn' => $commentUrn,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+            return null;
+        }
+
+        $comment = $response->json();
+
+        $storedPost = SocialPost::updateOrCreate(
+            [
+                'platform_post_id' => $postUrn,
+                'platform' => 'linkedin',
+            ],
+            [
+                'organization_id' => $account->organization_id,
+                'social_account_id' => $account->id,
+                'content' => '',
+                'posted_at' => isset($comment['createdAt'])
+                    ? date('Y-m-d H:i:s', intval($comment['createdAt'] / 1000))
+                    : now(),
+            ]
+        );
+
+        $message = $comment['message']['text'] ?? $comment['text'] ?? '';
+
+        $storedComment = SocialComment::updateOrCreate(
+            [
+                'platform_comment_id' => $commentUrn,
+                'platform' => 'linkedin',
+            ],
+            [
+                'organization_id' => $account->organization_id,
+                'social_account_id' => $account->id,
+                'social_post_id' => $storedPost->id,
+                'author_name' => $comment['authorName'] ?? 'LinkedIn User',
+                'platform_author_id' => $comment['actor'] ?? null,
+                'content' => $message,
+                'commented_at' => isset($comment['createdAt'])
+                    ? \Carbon\Carbon::createFromTimestampMs($comment['createdAt'])
+                        ->setTimezone(config('app.timezone'))
+                        ->format('Y-m-d H:i:s')
+                    : now()->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s'),
+
+                'status' => 'new',
+            ]
+        );
+
+        if ($storedComment->wasRecentlyCreated && $this->shouldAnalyzeComment($account, $storedComment)) {
+            AnalyzeWithOllama::dispatch($storedComment);
+        }
+
+        return $storedComment;
     }
 
     public function replyToComment(SocialAccount $account, string $parentCommentUrn, string $message): array
@@ -282,11 +334,6 @@ class LinkedInService
             ]);
 
         $data = $response->json();
-
-        Log::info('LinkedIn reply response', [
-            'status' => $response->status(),
-            'body' => $response->body(),
-        ]);
 
         if (!$response->successful()) {
             throw new \Exception($data['message'] ?? 'Unable to reply on LinkedIn.');
