@@ -8,6 +8,7 @@ use App\Jobs\AnalyzeWithOllama;
 use App\Models\SocialAccount;
 use App\Models\SocialComment;
 use App\Models\SocialPost;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 
@@ -15,13 +16,25 @@ class InstagramService
 {
     protected string $graphVersion = 'v25.0';
 
-    public function syncComments(SocialAccount $account): int
+    public function syncComments(SocialAccount $account, array $options = []): int
     {
+        $postWindowDays = $options['post_window_days'] ?? 30;
+        $commentWindowDays = $options['comment_window_days'] ?? 7;
+        $postCutoff = now()->subDays($postWindowDays);
+        $commentCutoff = now()->subDays($commentWindowDays);
+
         $totalComments = 0;
+        $skippedOldPosts = 0;
 
         $mediaList = $this->getMedia($account);
 
         foreach ($mediaList as $media) {
+            // Skip media older than the post window
+            $publishedAt = $media['timestamp'] ?? null;
+            if ($publishedAt && Carbon::parse($publishedAt)->lt($postCutoff)) {
+                $skippedOldPosts++;
+                continue;
+            }
 
             $storedPost = SocialPost::updateOrCreate(
                 [
@@ -32,7 +45,7 @@ class InstagramService
                     'organization_id' => $account->organization_id,
                     'social_account_id' => $account->id,
                     'content' => $media['caption'] ?? '',
-                    'posted_at' => $media['timestamp'] ?? now(),
+                    'posted_at' => $publishedAt ?? now(),
                     'raw_payload' => $media,
                 ]
             );
@@ -43,6 +56,12 @@ class InstagramService
             );
 
             foreach ($comments as $comment) {
+                // Skip comments older than the window
+                $commentedAt = $comment['timestamp'] ?? null;
+                if ($commentedAt && Carbon::parse($commentedAt)->lt($commentCutoff)) {
+                    continue;
+                }
+
                 $storedRootComment = $this->storeInstagramManualComment(
                     account: $account,
                     storedPost: $storedPost,
@@ -59,6 +78,12 @@ class InstagramService
                 }
 
                 foreach (($comment['replies']['data'] ?? []) as $reply) {
+                    // Skip replies older than the window
+                    $replyAt = $reply['timestamp'] ?? null;
+                    if ($replyAt && Carbon::parse($replyAt)->lt($commentCutoff)) {
+                        continue;
+                    }
+
                     $storedReply = $this->storeInstagramManualComment(
                         account: $account,
                         storedPost: $storedPost,
@@ -76,6 +101,14 @@ class InstagramService
                 }
             }
         }
+
+        $account->update(['last_synced_at' => now()]);
+
+        Log::info('Instagram sync completed', [
+            'account_id' => $account->id,
+            'total_comments' => $totalComments,
+            'skipped_old_posts' => $skippedOldPosts,
+        ]);
 
         return $totalComments;
     }

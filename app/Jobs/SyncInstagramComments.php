@@ -1,6 +1,6 @@
 <?php
 
-// app/Jobs/SyncFacebookComments.php
+// app/Jobs/SyncInstagramComments.php
 
 namespace App\Jobs;
 

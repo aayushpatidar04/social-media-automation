@@ -6,6 +6,7 @@ use App\Jobs\AnalyzeWithOllama;
 use App\Models\SocialAccount;
 use App\Models\SocialComment;
 use App\Models\SocialPost;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -117,7 +118,7 @@ class TwitterService
         return $data['data'];
     }
 
-    public function syncComments(SocialAccount $account): int
+    public function syncComments(SocialAccount $account, array $options = []): int
     {
         $accessToken = $this->validToken($account);
 
@@ -141,6 +142,13 @@ class TwitterService
         );
 
         $data = $response->json();
+
+        $windowDays = $options['comment_window_days'] ?? 7;
+        $cutoff = now()->subDays($windowDays);
+
+        $data = array_filter($data, function ($tweet) use ($cutoff) {
+            return Carbon::parse($tweet['created_at'])->gte($cutoff);
+        });
 
         Log::info('X mentions response', [
             'status' => $response->status(),

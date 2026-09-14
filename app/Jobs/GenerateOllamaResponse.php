@@ -35,6 +35,18 @@ class GenerateOllamaResponse implements ShouldQueue
         try {
             Log::info('🤖 Generating AI response for comment: ' . $this->comment->id);
 
+            $autoReplyWindow = config('sync.auto_reply_window_days', 1);
+
+            // Skip auto-reply on comments older than the window — they are stale
+            if ($this->comment->commented_at && $this->comment->commented_at->lt(now()->subDays($autoReplyWindow))) {
+                Log::info('Skipping auto-reply for stale comment', [
+                    'comment_id' => $this->comment->id,
+                    'commented_at' => $this->comment->commented_at,
+                    'window_days' => $autoReplyWindow,
+                ]);
+                return;
+            }
+
             $service = new OllamaService();
 
             $conversationHistory = $this->buildConversationHistory($this->comment);

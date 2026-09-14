@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\SocialAccount;
 use App\Models\SocialComment;
 use App\Models\SocialPost;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -50,12 +51,17 @@ class YoutubeService
         return $items[0] ?? null;
     }
 
-    public function syncComments(SocialAccount $account): int
+    public function syncComments(SocialAccount $account, array $options = []): int
     {
         $accessToken = $this->validToken($account);
         $videos = $this->getVideos($account, $accessToken);
 
+        $postWindowDays = $options['post_window_days'] ?? 30;
+        $commentWindowDays = $options['comment_window_days'] ?? 7;
+
+        $postCutoff = now()->subDays($postWindowDays);
         $totalNew = 0;
+        $skippedOldPosts = 0;
 
         foreach ($videos as $video) {
             $videoId = $video['id']['videoId']
@@ -66,15 +72,28 @@ class YoutubeService
                 continue;
             }
 
-            $totalNew += $this->syncNewCommentsForVideo($account, $videoId, $accessToken);
+            // Skip videos older than the post window — they exist in DB, no recheck needed
+            $publishedAt = data_get($video, 'snippet.publishedAt');
+            if ($publishedAt && Carbon::parse($publishedAt)->lt($postCutoff)) {
+                $skippedOldPosts++;
+                continue;
+            }
+
+            $totalNew += $this->syncNewCommentsForVideo($account, $videoId, $accessToken, $commentWindowDays);
         }
+
+        Log::info('YouTube sync', [
+            'account_id' => $account->id,
+            'new_comments' => $totalNew,
+            'skipped_old_posts' => $skippedOldPosts,
+        ]);
 
         $account->update(['last_synced_at' => now()]);
 
         return $totalNew;
     }
 
-    public function syncNewCommentsForVideo(SocialAccount $account, string $videoId, ?string $accessToken = null): int
+    public function syncNewCommentsForVideo(SocialAccount $account, string $videoId, ?string $accessToken = null, int $commentWindowDays = 1): int
     {
         $accessToken = $accessToken ?: $this->validToken($account);
 
@@ -103,7 +122,7 @@ class YoutubeService
         $totalNew = 0;
         $sinceId = $account->metadata['last_synced_comment_id'] ?? null;
 
-        $threads = $this->getCommentThreads($accessToken, $videoId, $sinceId);
+        $threads = $this->getCommentThreads($accessToken, $videoId, $sinceId, $commentWindowDays);
 
         foreach ($threads as $thread) {
             $topLevelCommentId = data_get($thread, 'id');
@@ -361,10 +380,10 @@ class YoutubeService
         $topicUrl = "https://www.youtube.com/xml/feeds/videos.xml?channel_id={$channelId}";
 
         $response = Http::asForm()->post($hubUrl, [
-            'hub.callback'   => $webhookUrl,
-            'hub.topic'      => $topicUrl,
-            'hub.verify'     => 'sync',
-            'hub.mode'       => 'subscribe',
+            'hub.callback' => $webhookUrl,
+            'hub.topic' => $topicUrl,
+            'hub.verify' => 'sync',
+            'hub.mode' => 'subscribe',
             'hub.lease_seconds' => 864000,
         ]);
 
@@ -375,8 +394,8 @@ class YoutubeService
             Log::warning('YouTube PubSubHubbub channel subscription failed', [
                 'account_id' => $account->id,
                 'channel_id' => $channelId,
-                'status'     => $response->status(),
-                'body'       => $response->body(),
+                'status' => $response->status(),
+                'body' => $response->body(),
             ]);
         }
 
@@ -451,12 +470,13 @@ class YoutubeService
         return $items[0]['snippet'] ?? ['title' => "Video {$videoId}"];
     }
 
-    private function getCommentThreads(string $accessToken, string $videoId, ?string $sinceId = null): array
+    private function getCommentThreads(string $accessToken, string $videoId, ?string $sinceId = null, int $windowDays = 1): array
     {
+        // Always use recent-first order so we can stop early when we hit the cutoff
         $response = Http::withToken($accessToken)->get("{$this->baseUrl}/commentThreads", [
-            'part' => 'snippet,replies',
+            'part' => 'snippet',
             'videoId' => $videoId,
-            'maxResults' => 100,
+            'maxResults' => 50,
             'order' => 'time',
             'textFormat' => 'plainText',
         ]);
@@ -471,7 +491,15 @@ class YoutubeService
             return [];
         }
 
+        $cutoff = now()->subDays($windowDays);
+
         $threads = $response->json('items') ?? [];
+
+        // Filter out comments older than the window — they already exist in DB
+        $threads = array_filter($threads, function ($thread) use ($cutoff) {
+            $publishedAt = data_get($thread, 'snippet.topLevelComment.snippet.publishedAt');
+            return $publishedAt && Carbon::parse($publishedAt)->gte($cutoff);
+        });
 
         if ($sinceId) {
             $filtered = [];

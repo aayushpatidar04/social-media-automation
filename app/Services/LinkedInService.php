@@ -6,6 +6,7 @@ use App\Jobs\AnalyzeWithOllama;
 use App\Models\SocialAccount;
 use App\Models\SocialComment;
 use App\Models\SocialPost;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -122,8 +123,10 @@ class LinkedInService
             ->toArray();
     }
 
-    public function syncComments(SocialAccount $account): int
+    public function syncComments(SocialAccount $account, array $options = []): int
     {
+        $postWindowDays = $options['post_window_days'] ?? 30;
+        $commentWindowDays = $options['comment_window_days'] ?? 7;
         $accessToken = $this->validToken($account);
 
         $posts = $this->getOrganizationPosts($account, $accessToken);
@@ -134,6 +137,11 @@ class LinkedInService
             $postId = $post['id'] ?? $post['urn'] ?? null;
 
             if (!$postId) {
+                continue;
+            }
+
+            $publishedAt = data_get($post, 'createdAt') ?? data_get($post, 'publishedAt');
+            if ($publishedAt && Carbon::parse($publishedAt)->lt(now()->subDays($postWindowDays))) {
                 continue;
             }
 
@@ -159,6 +167,11 @@ class LinkedInService
                     continue;
                 }
 
+                $commentedAt = data_get($comment, 'createdAt') ?? data_get($comment, 'publishedAt');
+                if ($commentedAt && Carbon::parse($commentedAt)->lt(now()->subDays($commentWindowDays))) {
+                    continue;
+                }
+
                 $message = $comment['message']['text'] ?? $comment['text'] ?? '';
 
                 $storedComment = SocialComment::updateOrCreate(
@@ -174,7 +187,7 @@ class LinkedInService
                         'platform_author_id' => $comment['actor'] ?? null,
                         'content' => $message,
                         'commented_at' => isset($comment['createdAt'])
-                            ? \Carbon\Carbon::createFromTimestampMs($comment['createdAt'])
+                            ? Carbon::createFromTimestampMs($comment['createdAt'])
                                 ->setTimezone(config('app.timezone'))
                                 ->format('Y-m-d H:i:s')
                             : now()->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s'),

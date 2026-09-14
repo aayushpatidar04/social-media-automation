@@ -8,6 +8,7 @@ use App\Jobs\AnalyzeWithOllama;
 use App\Models\SocialAccount;
 use App\Models\SocialComment;
 use App\Models\SocialPost;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 
@@ -23,19 +24,32 @@ class FacebookService
     /**
      * Sync all posts and comments from a Facebook page
      */
-    public function syncPageComments(SocialAccount $account): int
+    public function syncPageComments(SocialAccount $account, array $options = []): int
     {
         try {
             Log::info('Starting sync for account: ' . $account->platform_account_name);
 
+            $postWindowDays = $options['post_window_days'] ?? 30;
+            $commentWindowDays = $options['comment_window_days'] ?? 7;
+            $postCutoff = now()->subDays($postWindowDays);
+            $commentCutoff = now()->subDays($commentWindowDays);
+
             $totalComments = 0;
+            $skippedOldPosts = 0;
 
             // Get all posts from the page
             $posts = $this->getPagePosts($account);
             Log::info('Found ' . count($posts) . ' posts');
 
             foreach ($posts as $post) {
-                // Store post
+                // Skip posts older than the window — they exist in DB already
+                $publishedAt = $post['created_time'] ?? null;
+                if ($publishedAt && Carbon::parse($publishedAt)->lt($postCutoff)) {
+                    $skippedOldPosts++;
+                    continue;
+                }
+
+                // Store post (only if not already stored)
                 $storedPost = SocialPost::updateOrCreate(
                     [
                         'platform_post_id' => $post['id'],
@@ -45,7 +59,7 @@ class FacebookService
                         'organization_id' => $account->organization_id,
                         'social_account_id' => $account->id,
                         'content' => $post['message'] ?? '',
-                        'posted_at' => $post['created_time'] ?? now(),
+                        'posted_at' => $publishedAt ?? now(),
                         'raw_payload' => $post,
                     ]
                 );
@@ -55,6 +69,12 @@ class FacebookService
                 Log::info('Found ' . count($comments) . ' comments on post ' . $post['id']);
 
                 foreach ($comments as $comment) {
+                    // Skip comments older than the comment window
+                    $commentedAt = $comment['created_time'] ?? null;
+                    if ($commentedAt && Carbon::parse($commentedAt)->lt($commentCutoff)) {
+                        continue;
+                    }
+
                     $storedRootComment = $this->storeFacebookManualComment(
                         account: $account,
                         storedPost: $storedPost,
@@ -72,6 +92,12 @@ class FacebookService
                     }
 
                     foreach (($comment['comments']['data'] ?? []) as $reply) {
+                        // Skip replies older than the window too
+                        $replyAt = $reply['created_time'] ?? null;
+                        if ($replyAt && Carbon::parse($replyAt)->lt($commentCutoff)) {
+                            continue;
+                        }
+
                         $storedReply = $this->storeFacebookManualComment(
                             account: $account,
                             storedPost: $storedPost,
@@ -91,10 +117,14 @@ class FacebookService
                 }
             }
 
-            // Update last sync time
             $account->update(['last_synced_at' => now()]);
 
-            Log::info('Sync completed. Total comments: ' . $totalComments);
+            Log::info('Sync completed', [
+                'account_id' => $account->id,
+                'total_comments' => $totalComments,
+                'skipped_old_posts' => $skippedOldPosts,
+            ]);
+
             return $totalComments;
 
         } catch (\Exception $e) {

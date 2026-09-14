@@ -80,10 +80,17 @@
                                     account.platform === 'facebook' ||
                                     account.platform === 'instagram'
                                 "
-                                @click="syncNow(account.id)"
+                                @click="syncNow(account.id, false)"
                                 class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm"
                             >
                                 Sync Now
+                            </button>
+
+                            <button
+                                @click="syncNow(account.id, true)"
+                                class="...bg-amber-700 hover:bg-amber-600..."
+                            >
+                                Full Sync
                             </button>
 
                             <template v-if="account.platform === 'youtube'">
@@ -201,10 +208,14 @@ const syncLinkedIn = async (accountId) => {
     }
 };
 
-const syncNow = async (accountId) => {
+const syncNow = async (accountId, fullSync) => {
     try {
         const response = await axios.post(
             `/settings/social-accounts/${accountId}/sync`,
+            null,
+            {
+                params: { full_sync: fullSync ? 1 : 0 },
+            },
         );
         console.log(response.data.message);
     } catch (error) {
