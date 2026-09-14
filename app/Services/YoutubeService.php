@@ -319,114 +319,84 @@ class YoutubeService
         $accessToken = $this->validToken($account);
         $videos = $this->getVideos($account, $accessToken);
 
-        // getVideos() already attaches _status to each video — no extra API call needed
-        $videoStatusMap = [];
-        foreach ($videos as $v) {
-            $vid = $v['id']['videoId'] ?? $v['snippet']['resourceId']['videoId'] ?? null;
-            if ($vid && isset($v['_status'])) {
-                $videoStatusMap[$vid] = $v['_status'];
-            }
-        }
-
         $webhookUrl = rtrim(config('app.url'), '/') . '/webhooks/youtube';
         $hubUrl = 'https://pubsubhubbub.appspot.com/subscribe';
 
-        $success = 0;
-        $failed = 0;
-        $skipped = 0;
-        $subscribedVideoIds = [];
+        // Resolve channel ID — prefer account metadata, fall back to any video's snippet
+        $channelId = $account->metadata['youtube_channel_id'] ?? null;
 
+        if (!$channelId) {
+            foreach ($videos as $video) {
+                $channelId = $video['snippet']['channelId'] ?? null;
+                if ($channelId) {
+                    break;
+                }
+            }
+        }
+
+        if (!$channelId) {
+            Log::warning('YouTube PubSubHubbub: no channel ID found, cannot subscribe', [
+                'account_id' => $account->id,
+            ]);
+            return ['success' => 0, 'failed' => 1, 'skipped' => 0];
+        }
+
+        // Per-video status filtering no longer happens here — YouTube rejects
+        // per-video topics. Filter by video ID in the webhook handler instead.
+        $videoIds = [];
         foreach ($videos as $video) {
             $videoId = $video['id']['videoId']
                 ?? $video['snippet']['resourceId']['videoId']
                 ?? null;
-
-            if (!$videoId) {
-                continue;
-            }
-
-            $vStatus = $videoStatusMap[$videoId] ?? null;
-            \Log::info($vStatus);
-
-            // If status is missing entirely, skip — it's a restricted/age-gated/kids video
-            // if (!$vStatus) {
-            //     Log::info('YouTube PubSubHubbub: skipping video with unavailable status', [
-            //         'video_id' => $videoId,
-            //     ]);
-            //     $skipped++;
-            //     continue;
-            // }
-
-            if (($vStatus['privacyStatus'] ?? 'public') !== 'public') {
-                $skipped++;
-                continue;
-            }
-            if (($vStatus['commentStatus'] ?? 'allowed') === 'disabled') {
-                $skipped++;
-                continue;
-            }
-            if (($vStatus['uploadStatus'] ?? 'processed') !== 'processed') {
-                $skipped++;
-                continue;
-            }
-            if (($vStatus['embeddable'] ?? 'true') === 'false') {
-                $skipped++;
-                continue;
-            }
-
-            // Also check for kids-content via channel's madeForKids flag from snippet
-            if (($vStatus['madeForKids'] ?? false) === true) {
-                Log::info('YouTube PubSubHubbub: skipping kids content (COPPA)', [
-                    'video_id' => $videoId,
-                ]);
-                $skipped++;
-                continue;
-            }
-
-            $subscribedVideoIds[] = $videoId;
-
-            $topicUrl = "https://www.youtube.com/xml/feeds/videos.xml?video_id={$videoId}";
-
-            $response = Http::asForm()->post($hubUrl, [
-                'hub.callback' => $webhookUrl,
-                'hub.topic' => $topicUrl,
-                'hub.verify' => 'sync',
-                'hub.mode' => 'subscribe',
-                'hub.lease_seconds' => 864000,
-            ]);
-
-            if ($response->successful()) {
-                $success++;
-            } elseif ($response->status() === 403 && str_contains($response->body(), 'Restricted')) {
-                // Hub itself rejected this video — count as skipped, not failed
-                $skipped++;
-                Log::info('YouTube PubSubHubbub: hub rejected video (restricted)', [
-                    'video_id' => $videoId,
-                ]);
-            } else {
-                $failed++;
-                Log::warning('YouTube PubSubHubbub subscription failed', [
-                    'video_id' => $videoId,
-                    'status' => $response->status(),
-                    'body' => $response->body(),
-                ]);
+            if ($videoId) {
+                $videoIds[] = $videoId;
             }
         }
 
+        $success = 0;
+        $failed = 0;
+        $skipped = 0;
+
+        // Channel-level topic is the only topic third parties may subscribe to
+        $topicUrl = "https://www.youtube.com/xml/feeds/videos.xml?channel_id={$channelId}";
+
+        $response = Http::asForm()->post($hubUrl, [
+            'hub.callback'   => $webhookUrl,
+            'hub.topic'      => $topicUrl,
+            'hub.verify'     => 'sync',
+            'hub.mode'       => 'subscribe',
+            'hub.lease_seconds' => 864000,
+        ]);
+
+        if ($response->successful() || $response->status() === 204) {
+            $success = 1;
+        } else {
+            $failed = 1;
+            Log::warning('YouTube PubSubHubbub channel subscription failed', [
+                'account_id' => $account->id,
+                'channel_id' => $channelId,
+                'status'     => $response->status(),
+                'body'       => $response->body(),
+            ]);
+        }
+
         $metadata = $account->metadata ?? [];
+        $metadata['youtube_channel_id'] = $channelId;
         $metadata['last_video_ids'] = array_slice(
-            array_merge($metadata['last_video_ids'] ?? [], $subscribedVideoIds),
+            array_merge($metadata['last_video_ids'] ?? [], $videoIds),
             -50
         );
-        $metadata['pubsub_subscribed'] = true;
+        $metadata['pubsub_subscribed'] = $success === 1;
         $metadata['pubsub_subscribed_at'] = now()->toIso8601String();
         $account->update(['metadata' => $metadata]);
 
         Log::info('YouTube PubSubHubbub subscription completed', [
             'account_id' => $account->id,
+            'channel_id' => $channelId,
             'subscribed' => $success,
             'failed' => $failed,
             'skipped' => $skipped,
+            'videos_tracked' => count($videoIds),
         ]);
 
         return ['success' => $success, 'failed' => $failed, 'skipped' => $skipped];
