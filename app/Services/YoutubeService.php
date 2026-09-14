@@ -163,7 +163,7 @@ class YoutubeService
             'parent_id' => $parentComment?->id,
             'author_name' => $authorName,
             'author_avatar_url' => $authorAvatar,
-            'author_id' => data_get($snippet, 'authorChannelId.value'),
+            'platform_author_id' => data_get($snippet, 'authorChannelId.value'),
             'content' => $content,
             'direction' => 'inbound',
             'status' => 'new',
