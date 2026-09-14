@@ -1,14 +1,15 @@
 <?php
 
-// app/Http/Controllers/CommentController.php - UPDATED
-
 namespace App\Http\Controllers;
 
 use App\Models\SocialComment;
 use App\Models\AiConversation;
 use App\Services\FacebookService;
 use App\Services\InstagramService;
+use App\Services\LinkedInService;
 use App\Services\RAGService;
+use App\Services\TwitterService;
+use App\Services\YoutubeService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
@@ -38,36 +39,36 @@ class CommentController extends Controller
             });
 
         if ($request->filled('status')) {
-            $query->where('status', $request->status);
+            $query->where('social_comments.status', $request->status);
         }
 
         if ($request->filled('sentiment')) {
-            $query->where('sentiment', $request->sentiment);
+            $query->where('social_comments.sentiment', $request->sentiment);
         }
 
         if ($request->filled('intent')) {
-            $query->where('intent', $request->intent);
+            $query->where('social_comments.intent', $request->intent);
         }
 
         if ($request->filled('platform')) {
-            $query->where('platform', $request->platform);
+            $query->where('social_comments.platform', $request->platform);
         }
 
         if ($request->filled('search')) {
             $search = $request->search;
 
             $query->where(function ($q) use ($search) {
-                $q->where('content', 'like', "%{$search}%")
-                    ->orWhere('author_name', 'like', "%{$search}%")
+                $q->where('social_comments.content', 'like', "%{$search}%")
+                    ->orWhere('social_comments.author_name', 'like', "%{$search}%")
                     ->orWhereHas('threadReplies', function ($replyQuery) use ($search) {
-                        $replyQuery->where('content', 'like', "%{$search}%")
-                            ->orWhere('author_name', 'like', "%{$search}%");
+                        $replyQuery->where('social_comments.content', 'like', "%{$search}%")
+                            ->orWhere('social_comments.author_name', 'like', "%{$search}%");
                     });
             });
         }
 
         $comments = $query
-            ->latest('commented_at')
+            ->latest('social_comments.commented_at')
             ->paginate(20);
 
         return Inertia::render('Inbox', [
@@ -91,26 +92,26 @@ class CommentController extends Controller
 
         $query = $organization->socialComments()
             ->with(['socialAccount', 'socialPost', 'aiConversation'])
-            ->latest('commented_at');
+            ->latest('social_comments.commented_at');
 
-        // Apply all filters
+        // Apply all filters — prefix with table name to avoid ambiguity
         if ($request->status) {
-            $query->where('status', $request->status);
+            $query->where('social_comments.status', $request->status);
         }
         if ($request->sentiment) {
-            $query->where('sentiment', $request->sentiment);
+            $query->where('social_comments.sentiment', $request->sentiment);
         }
         if ($request->intent) {
-            $query->where('intent', $request->intent);
+            $query->where('social_comments.intent', $request->intent);
         }
         if ($request->platform) {
-            $query->where('platform', $request->platform);
+            $query->where('social_comments.platform', $request->platform);
         }
         if ($request->search) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('content', 'like', "%{$search}%")
-                    ->orWhere('author_name', 'like', "%{$search}%");
+                $q->where('social_comments.content', 'like', "%{$search}%")
+                    ->orWhere('social_comments.author_name', 'like', "%{$search}%");
             });
         }
 
@@ -141,7 +142,7 @@ class CommentController extends Controller
     }
 
     /**
-     * Get AI conversation for a comment (NEW)
+     * Get AI conversation for a comment
      */
     public function getAiConversation(SocialComment $comment)
     {
@@ -191,7 +192,7 @@ class CommentController extends Controller
 
         $validated = $request->validate([
             'message' => 'required|string|max:500',
-            'is_ai_response' => 'boolean',  # NEW: Track if using AI response
+            'is_ai_response' => 'boolean',
         ]);
 
         try {
@@ -204,7 +205,7 @@ class CommentController extends Controller
             Log::info('Sending reply to comment: ' . $comment->id);
             Log::info('Is AI response: ' . ($validated['is_ai_response'] ? 'YES' : 'NO'));
 
-            // Publish to Facebook/Instagram
+            // Publish to platform
             $published = $this->publishReply($comment, $validated['message']);
 
             if (!$published) {
@@ -217,7 +218,6 @@ class CommentController extends Controller
                 ->first();
 
             if ($aiConversation) {
-                // Update existing
                 $aiConversation->update([
                     'response_status' => 'approved',
                     'approved_by_user_id' => Auth::id(),
@@ -226,7 +226,6 @@ class CommentController extends Controller
                 ]);
                 Log::info('Updated AI conversation: ' . $aiConversation->id);
             } else {
-                // Create new (manual reply)
                 $aiConversation = AiConversation::create([
                     'organization_id' => $comment->socialAccount->organization_id,
                     'social_comment_id' => $comment->id,
@@ -234,7 +233,7 @@ class CommentController extends Controller
                     'ai_response' => $validated['message'],
                     'response_status' => 'approved',
                     'confidence' => 1.0,
-                    'is_ai_response' => false,  # This was manual
+                    'is_ai_response' => false,
                     'approved_by_user_id' => Auth::id(),
                     'approved_at' => now(),
                 ]);
@@ -302,21 +301,18 @@ class CommentController extends Controller
 
             Log::info('Approving AI response for comment: ' . $comment->id);
 
-            // Publish the reply
             $published = $this->publishReply($comment, $aiConversation->ai_response);
 
             if (!$published) {
-                return response()->json(['error' => 'Failed to publish reply'], 500);
+                return response()->json(['error' => 'Failed to publish response'], 500);
             }
 
-            // Update conversation
             $aiConversation->update([
                 'response_status' => 'approved',
                 'approved_by_user_id' => Auth::id(),
                 'approved_at' => now(),
             ]);
 
-            // Update comment
             $comment->update([
                 'status' => 'replied',
                 'replied_at' => now(),
@@ -423,25 +419,25 @@ class CommentController extends Controller
     }
 
     /**
-     * Publish reply to Facebook/Instagram
+     * Publish reply to the appropriate platform
      */
     private function publishReply(SocialComment $comment, string $message)
     {
         try {
             $account = $comment->socialAccount;
 
-            if ($comment->platform === 'facebook') {
-                $service = new FacebookService();
-                return $service->publishReply($comment, $message, $account);
+            if (!$account) {
+                return false;
             }
 
-            if ($comment->platform === 'instagram') {
-                $service = new InstagramService();
-                return $service->publishReply($comment, $message, $account);
-            }
-
-            Log::warning('Unknown platform: ' . $comment->platform);
-            return false;
+            return match ($comment->platform) {
+                'facebook' => (new FacebookService())->publishReply($comment, $message, $account),
+                'instagram' => (new InstagramService())->publishReply($comment, $message, $account),
+                'youtube' => (new YoutubeService())->publishReply($comment, $message, $account),
+                'twitter' => (new TwitterService())->publishReply($comment, $message, $account),
+                'linkedin' => (new LinkedInService())->publishReply($comment, $message, $account),
+                default => false,
+            };
 
         } catch (\Exception $e) {
             Log::error('Error publishing reply: ' . $e->getMessage());

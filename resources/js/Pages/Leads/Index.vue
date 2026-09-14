@@ -9,23 +9,38 @@
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
                 <!-- Filters -->
                 <div class="lg:col-span-1">
-                    <div class="bg-slate-800 rounded-lg border border-slate-700 p-4 space-y-4">
+                    <div
+                        class="bg-slate-800 rounded-lg border border-slate-700 p-4 space-y-4"
+                    >
                         <div>
-                            <label class="block text-sm font-medium text-slate-300 mb-2">Status</label>
+                            <label
+                                class="block text-sm font-medium text-slate-300 mb-2"
+                                >Status</label
+                            >
                             <select
-                                class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm">
+                                v-model="filters.status"
+                                @change="applyFilters"
+                                class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                            >
                                 <option value="">All Status</option>
                                 <option value="new">New</option>
                                 <option value="contacted">Contacted</option>
                                 <option value="qualified">Qualified</option>
                                 <option value="converted">Converted</option>
+                                <option value="lost">Lost</option>
                             </select>
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-slate-300 mb-2">Type</label>
+                            <label
+                                class="block text-sm font-medium text-slate-300 mb-2"
+                                >Type</label
+                            >
                             <select
-                                class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm">
+                                v-model="filters.type"
+                                @change="applyFilters"
+                                class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                            >
                                 <option value="">All Types</option>
                                 <option value="sales">Sales</option>
                                 <option value="support">Support</option>
@@ -38,28 +53,60 @@
                 <!-- Leads List -->
                 <div class="lg:col-span-3">
                     <div class="space-y-4">
-                        <div v-if="props.leads && props.leads.length">
-                            <div v-for="lead in props.leads" :key="lead.id"
-                                class="bg-slate-800 rounded-lg border border-slate-700 p-6 hover:border-slate-600 cursor-pointer transition-colors">
+                        <div
+                            v-if="
+                                props.leads &&
+                                props.leads.data &&
+                                props.leads.data.length
+                            "
+                        >
+                            <div
+                                v-for="lead in props.leads.data"
+                                :key="lead.id"
+                                class="bg-slate-800 rounded-lg border border-slate-700 p-6 hover:border-slate-600 cursor-pointer transition-colors"
+                            >
                                 <div class="flex justify-between items-start">
                                     <div class="flex-1">
-                                        <h3 class="text-lg font-bold text-white">{{ lead.author_name }}</h3>
-                                        <p class="text-slate-400 text-sm">{{ lead.company_name || 'N/A' }}</p>
-                                        <p class="text-slate-500 text-sm mt-2">{{ lead.initial_message }}</p>
+                                        <h3
+                                            class="text-lg font-bold text-white"
+                                        >
+                                            {{ lead.author_name }}
+                                        </h3>
+                                        <p class="text-slate-400 text-sm">
+                                            {{ lead.company_name || "N/A" }}
+                                        </p>
+                                        <p class="text-slate-500 text-sm mt-2">
+                                            {{ lead.initial_message }}
+                                        </p>
                                     </div>
                                     <div class="flex flex-col items-end gap-2">
                                         <span
-                                            :class="['px-3 py-1 rounded text-sm font-medium', getStatusColor(lead.lead_status)]">
+                                            :class="[
+                                                'px-3 py-1 rounded text-sm font-medium',
+                                                getStatusColor(
+                                                    lead.lead_status,
+                                                ),
+                                            ]"
+                                        >
                                             {{ lead.lead_status }}
                                         </span>
-                                        <span class="text-sm font-bold text-white">Score: {{ lead.lead_score }}</span>
+                                        <span
+                                            class="text-sm font-bold text-white"
+                                            >Score: {{ lead.lead_score }}</span
+                                        >
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div v-if="leads.length === 0"
-                            class="bg-slate-800 rounded-lg border border-slate-700 p-12 text-center">
+                        <div
+                            v-if="
+                                !props.leads ||
+                                !props.leads.data ||
+                                props.leads.data.length === 0
+                            "
+                            class="bg-slate-800 rounded-lg border border-slate-700 p-12 text-center"
+                        >
                             <p class="text-slate-400">No leads found</p>
                         </div>
                     </div>
@@ -70,22 +117,35 @@
 </template>
 
 <script setup>
-import AppLayout from '@/Layouts/AppLayout.vue'
+import AppLayout from "@/Layouts/AppLayout.vue";
+import { ref } from "vue";
 
 const props = defineProps({
     leads: {
-        type: Array,
-        default: () => []
-    }
-})
+        type: Object,
+        default: () => ({ data: [] }),
+    },
+});
+
+const filters = ref({
+    status: "",
+    type: "",
+});
 
 const getStatusColor = (status) => {
     const colors = {
-        new: 'bg-yellow-900 text-yellow-200',
-        contacted: 'bg-blue-900 text-blue-200',
-        qualified: 'bg-purple-900 text-purple-200',
-        converted: 'bg-green-900 text-green-200',
-    }
-    return colors[status] || 'bg-slate-700 text-slate-200'
-}
+        new: "bg-yellow-900 text-yellow-200",
+        contacted: "bg-blue-900 text-blue-200",
+        qualified: "bg-purple-900 text-purple-200",
+        converted: "bg-green-900 text-green-200",
+        lost: "bg-red-900 text-red-200",
+    };
+    return colors[status] || "bg-slate-700 text-slate-200";
+};
+
+const applyFilters = () => {
+    // Filters are applied server-side on initial load.
+    // For AJAX filtering, send a request to /leads/filter endpoint.
+    // This is a placeholder for future enhancement.
+};
 </script>

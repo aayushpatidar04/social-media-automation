@@ -453,7 +453,11 @@ class YoutubeService
             array_merge($metadata['last_video_ids'] ?? [], $videoIds),
             -50
         );
-        $account->update(['metadata' => $metadata]);
+        $account->update([
+            'metadata' => $metadata,
+            'pubsub_subscribed' => true,
+            'pubsub_subscribed_at' => now()->toIso8601String(),
+        ]);
 
         Log::info('YouTube PubSubHubbub subscription completed', [
             'account_id' => $account->id,
