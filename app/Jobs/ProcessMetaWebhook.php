@@ -3,8 +3,6 @@
 namespace App\Jobs;
 
 use App\Models\SocialAccount;
-use App\Models\SocialComment;
-use App\Models\SocialPost;
 use App\Services\FacebookService;
 use App\Services\InstagramService;
 use Illuminate\Bus\Queueable;
@@ -49,10 +47,6 @@ class ProcessMetaWebhook implements ShouldQueue
     {
         $value = $change['value'] ?? [];
 
-        if (($value['item'] ?? null) !== 'comment') {
-            return;
-        }
-
         if (($value['verb'] ?? null) !== 'add') {
             return;
         }
@@ -75,7 +69,23 @@ class ProcessMetaWebhook implements ShouldQueue
             return;
         }
 
-        app(FacebookService::class)->syncSingleCommentFromWebhook($account, $value);
+        $item = $value['item'] ?? null;
+
+        if ($item === 'comment') {
+            app(FacebookService::class)->syncSingleCommentFromWebhook($account, $value);
+            return;
+        }
+
+        if (in_array($item, ['status', 'photo', 'video', 'post', 'share'], true)) {
+            app(FacebookService::class)->syncSinglePostFromWebhook($account, $value);
+            return;
+        }
+
+        Log::info('Unhandled Facebook feed item', [
+            'page_id' => $pageId,
+            'item' => $item,
+            'value' => $value,
+        ]);
     }
 
     private function handleInstagramComment(array $entry, array $change): void
@@ -103,8 +113,12 @@ class ProcessMetaWebhook implements ShouldQueue
         app(InstagramService::class)->syncSingleCommentFromWebhook($account, $commentId);
     }
 
-    private function findFacebookAccountByInstagramId(string $instagramAccountId): ?SocialAccount
+    private function findFacebookAccountByInstagramId(?string $instagramAccountId): ?SocialAccount
     {
+        if (!$instagramAccountId) {
+            return null;
+        }
+
         $facebookAccounts = SocialAccount::where('platform', 'facebook')
             ->where('is_active', true)
             ->get();
@@ -124,7 +138,7 @@ class ProcessMetaWebhook implements ShouldQueue
 
             $connectedInstagramId = data_get($response->json(), 'connected_instagram_account.id');
 
-            if ($connectedInstagramId == $instagramAccountId) {
+            if ((string) $connectedInstagramId === (string) $instagramAccountId) {
                 return $account;
             }
         }

@@ -435,4 +435,41 @@ class FacebookService
             $account->auto_reply_started_at
         );
     }
+
+    public function syncSinglePostFromWebhook(SocialAccount $account, array $value): ?SocialPost
+    {
+        $postId = $value['post_id'] ?? data_get($value, 'post.id');
+
+        if (!$postId) {
+            Log::warning('Facebook post webhook missing post_id', [
+                'value' => $value,
+            ]);
+
+            return null;
+        }
+
+        $storedPost = SocialPost::updateOrCreate(
+            [
+                'platform_post_id' => $postId,
+                'platform' => 'facebook',
+            ],
+            [
+                'organization_id' => $account->organization_id,
+                'social_account_id' => $account->id,
+                'content' => $value['message'] ?? '',
+                'posted_at' => isset($value['created_time'])
+                    ? \Carbon\Carbon::createFromTimestamp($value['created_time'])
+                    : now(),
+                'raw_payload' => $value,
+            ]
+        );
+
+        Log::info('Facebook post synced from webhook', [
+            'post_id' => $storedPost->id,
+            'platform_post_id' => $postId,
+            'item' => $value['item'] ?? null,
+        ]);
+
+        return $storedPost;
+    }
 }
