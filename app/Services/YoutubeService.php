@@ -261,15 +261,22 @@ class YoutubeService
 
         $videoStatusMap = [];
         if (!empty($videoIds)) {
+            // Use videos.list instead of search.list so we get status + snippet in one call
             $statusResponse = Http::withToken($accessToken)->get("{$this->baseUrl}/videos", [
-                'part' => 'status,snippet',
+                'part' => 'status,snippet,contentDetails',
                 'id' => implode(',', array_slice($videoIds, 0, 50)),
             ]);
             if ($statusResponse->successful()) {
                 foreach ($statusResponse->json('items', []) as $item) {
+                    // If status part is missing, this is a restricted video — skip it
+                    if (!isset($item['status'])) {
+                        continue;
+                    }
                     $videoStatusMap[$item['id']] = [
-                        'privacyStatus' => data_get($item, 'status.privacyStatus', 'public'),
-                        'commentStatus' => data_get($item, 'snippet.commentStatus', 'allowed'),
+                        'privacyStatus' => $item['status']['privacyStatus'] ?? 'public',
+                        'commentStatus' => $item['snippet']['commentStatus'] ?? 'allowed',
+                        'uploadStatus' => $item['status']['uploadStatus'] ?? 'processed',
+                        'embeddable' => $item['status']['embeddable'] ?? true,
                     ];
                 }
             }
@@ -292,12 +299,30 @@ class YoutubeService
                 continue;
             }
 
-            $vStatus = $videoStatusMap[$videoId] ?? ['privacyStatus' => 'public', 'commentStatus' => 'allowed'];
-            if ($vStatus['privacyStatus'] !== 'public') {
+            $vStatus = $videoStatusMap[$videoId] ?? null;
+
+            // If status is missing entirely, skip — it's a restricted/age-gated/kids video
+            if (!$vStatus) {
+                Log::info('YouTube PubSubHubbub: skipping video with unavailable status', [
+                    'video_id' => $videoId,
+                ]);
                 $skipped++;
                 continue;
             }
-            if ($vStatus['commentStatus'] === 'disabled') {
+
+            if (($vStatus['privacyStatus'] ?? 'public') !== 'public') {
+                $skipped++;
+                continue;
+            }
+            if (($vStatus['commentStatus'] ?? 'allowed') === 'disabled') {
+                $skipped++;
+                continue;
+            }
+            if (($vStatus['uploadStatus'] ?? 'processed') !== 'processed') {
+                $skipped++;
+                continue;
+            }
+            if (($vStatus['embeddable'] ?? 'true') === 'false') {
                 $skipped++;
                 continue;
             }
@@ -316,6 +341,12 @@ class YoutubeService
 
             if ($response->successful()) {
                 $success++;
+            } elseif ($response->status() === 403 && str_contains($response->body(), 'Restricted')) {
+                // Hub itself rejected this video — count as skipped, not failed
+                $skipped++;
+                Log::info('YouTube PubSubHubbub: hub rejected video (restricted)', [
+                    'video_id' => $videoId,
+                ]);
             } else {
                 $failed++;
                 Log::warning('YouTube PubSubHubbub subscription failed', [

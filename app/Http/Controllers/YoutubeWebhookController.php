@@ -16,7 +16,18 @@ class YoutubeWebhookController extends Controller
      */
     public function handle(Request $request)
     {
-        // YouTube sends the Atom feed as raw XML in the request body
+        // WebSub verification challenge — hub sends this as GET with hub.challenge
+        if ($request->isMethod('get') || $request->has('hub_challenge')) {
+            $challenge = $request->input('hub_challenge');
+            Log::info('YouTube PubSubHubbub verification challenge received', [
+                'challenge' => $challenge,
+                'mode' => $request->input('hub_mode'),
+            ]);
+            return response($challenge, 200)
+                ->header('Content-Type', 'text/plain');
+        }
+
+        // YouTube sends the Atom feed as raw XML in the request body (POST)
         $body = $request->getContent();
 
         if (empty($body)) {
@@ -24,7 +35,6 @@ class YoutubeWebhookController extends Controller
         }
 
         try {
-            // Parse the XML to extract video and comment info
             $xml = simplexml_load_string($body);
             if (!$xml) {
                 Log::warning('YouTube webhook: invalid XML received');
@@ -38,7 +48,7 @@ class YoutubeWebhookController extends Controller
             // Extract the entry (new comment notification)
             $entry = $xml->children($atomNs)->entry;
             if (!$entry) {
-                Log::info('YouTube webhook: no entry in feed (likely a challenge verification)');
+                Log::info('YouTube webhook: no entry in feed');
                 return response('No entry', 200);
             }
 
@@ -55,15 +65,12 @@ class YoutubeWebhookController extends Controller
             }
 
             if (!$videoId) {
-                Log::warning('YouTube webhook: could not extract video ID', [
-                    'links' => collect((array) $links)->map(fn($l) => (string) $l->attributes()->href)->toArray(),
-                ]);
+                Log::warning('YouTube webhook: could not extract video ID');
                 return response('No video ID', 400);
             }
 
             Log::info('YouTube webhook: new comment notification', [
                 'video_id' => $videoId,
-                'entry_id' => (string) $entry->children($atomNs)->id,
             ]);
 
             // Dispatch async job to fetch and process the new comment
@@ -79,30 +86,5 @@ class YoutubeWebhookController extends Controller
 
             return response('Error', 500);
         }
-    }
-
-    /**
-     * Handle PubSubHubbub subscription verification challenge.
-     * YouTube hub sends this when we first subscribe to a video's feed.
-     */
-    public function verify(Request $request)
-    {
-        $mode = $request->input('hub_mode');
-        $topic = $request->input('hub_topic');
-        $challenge = $request->input('hub_challenge');
-        $leaseSeconds = $request->input('hub_lease_seconds');
-
-        Log::info('YouTube PubSubHubbub verification', [
-            'mode' => $mode,
-            'topic' => $topic,
-            'lease_seconds' => $leaseSeconds,
-        ]);
-
-        if ($mode === 'subscribe') {
-            return response($challenge, 200)
-                ->header('Content-Type', 'text/plain');
-        }
-
-        return response('Verification failed', 403);
     }
 }
