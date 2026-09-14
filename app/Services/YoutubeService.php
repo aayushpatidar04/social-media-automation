@@ -61,7 +61,7 @@ class YoutubeService
 
     public function validToken(SocialAccount $account): string
     {
-        if (!$account->token_expires_at || now()->greaterThan($account->token_expires_at->subMinutes(5))) {
+        if (!$account->token_expires_at || now()->greaterThan($account->token_expires_at->copy()->subMinutes(5))) {
             return $this->refreshAccessToken($account);
         }
 
@@ -126,6 +126,8 @@ class YoutubeService
                     continue;
                 }
 
+                $topLevelCommentId = data_get($topLevelComment, 'id');
+
                 $storedRootComment = $this->storeYouTubeComment(
                     account: $account,
                     storedPost: $storedPost,
@@ -141,11 +143,26 @@ class YoutubeService
                 $replies = data_get($thread, 'replies.comments', []);
 
                 foreach ($replies as $reply) {
+                    $replyParentId = data_get($reply, 'snippet.parentId');
+
+                    // Resolve the actual parent in DB instead of always using root
+                    $actualParent = $storedRootComment;
+
+                    if ($replyParentId && $replyParentId !== $topLevelCommentId) {
+                        $actualParent = SocialComment::where('platform', 'youtube')
+                            ->where('platform_comment_id', $replyParentId)
+                            ->first();
+
+                        if (!$actualParent) {
+                            $actualParent = $storedRootComment;
+                        }
+                    }
+
                     $storedReply = $this->storeYouTubeComment(
                         account: $account,
                         storedPost: $storedPost,
                         comment: $reply,
-                        parentComment: $storedRootComment,
+                        parentComment: $actualParent,
                         isOwnComment: $this->isOwnYouTubeComment($account, $reply)
                     );
 
