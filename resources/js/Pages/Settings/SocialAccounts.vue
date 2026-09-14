@@ -171,107 +171,144 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import AppLayout from '@/Layouts/AppLayout.vue'
-import axios from 'axios'
-import { router } from '@inertiajs/vue3'
+import { ref } from "vue";
+import AppLayout from "@/Layouts/AppLayout.vue";
+import axios from "axios";
+import { router } from "@inertiajs/vue3";
 
 const props = defineProps({
- accounts: Array,
- facebook_login_url: String,
- available_platforms: Array,
-})
+    accounts: Array,
+    facebook_login_url: String,
+    available_platforms: Array,
+});
 
-const facebookLoginUrl = ref(props.facebook_login_url || '#')
-const youtubeLoginUrl = '/auth/youtube/login'
-const twitterLoginUrl = '/auth/twitter/login'
-const linkedinLoginUrl = '/auth/linkedin/login'
+const facebookLoginUrl = ref(props.facebook_login_url || "#");
+const youtubeLoginUrl = "/auth/youtube/login";
+const twitterLoginUrl = "/auth/twitter/login";
+const linkedinLoginUrl = "/auth/linkedin/login";
 
 const syncLinkedIn = async (accountId) => {
- try {
- const response = await axios.post(`/settings/social-accounts/${accountId}/linkedin-sync`)
- console.log(response.data.message)
- } catch (error) {
- console.error('LinkedIn sync failed:', error.response?.data || error.message)
- }
-}
+    try {
+        const response = await axios.post(
+            `/settings/social-accounts/${accountId}/linkedin-sync`,
+        );
+        console.log(response.data.message);
+    } catch (error) {
+        console.error(
+            "LinkedIn sync failed:",
+            error.response?.data || error.message,
+        );
+    }
+};
 
 const syncNow = async (accountId) => {
- try {
- const response = await axios.post(`/settings/social-accounts/${accountId}/sync`)
- console.log(response.data.message)
- } catch (error) {
- console.error('Sync failed:', error.response?.data || error.message)
- }
-}
+    try {
+        const response = await axios.post(
+            `/settings/social-accounts/${accountId}/sync`,
+        );
+        console.log(response.data.message);
+    } catch (error) {
+        console.error("Sync failed:", error.response?.data || error.message);
+    }
+};
 
 const syncYoutube = async (accountId) => {
- try {
- const response = await axios.post(`/settings/social-accounts/${accountId}/youtube-sync`)
- console.log(response.data.message)
- } catch (error) {
- console.error('YouTube sync failed:', error.response?.data || error.message)
- }
-}
+    try {
+        const response = await axios.post(
+            `/settings/social-accounts/${accountId}/youtube-sync`,
+        );
+        console.log(response.data.message);
+    } catch (error) {
+        console.error(
+            "YouTube sync failed:",
+            error.response?.data || error.message,
+        );
+    }
+};
 
 const toggleYoutubeWebhook = async (account) => {
- try {
- if (account.metadata?.pubsub_subscribed) {
- if (!confirm('Disable real-time webhook for this channel? Cron sync will continue.')) return
- await axios.post(`/youtube/unsubscribe/${account.id}`)
- } else {
- const response = await axios.post(`/youtube/subscribe/${account.id}`)
- alert(`Subscribed: ${response.data.subscribed}, Failed: ${response.data.failed}`)
- }
- router.reload()
- } catch (error) {
- console.error('YouTube webhook toggle failed:', error.response?.data || error.message)
- alert('Failed: ' . (error.response?.data?.message || error.message))
- }
-}
+    try {
+        if (account.metadata?.pubsub_subscribed) {
+            if (
+                !confirm(
+                    "Disable real-time webhook for this channel? Cron sync will continue.",
+                )
+            )
+                return;
+            await axios.post(`/youtube/unsubscribe/${account.id}`);
+        } else {
+            const response = await axios.post(
+                `/youtube/subscribe/${account.id}`,
+            );
+            alert(
+                `Subscribed: ${response.data.subscribed}, Failed: ${response.data.failed}`,
+            );
+        }
+        router.reload();
+    } catch (error) {
+        console.error(
+            "YouTube webhook toggle failed:",
+            error.response?.data || error.message,
+        );
+        alert(`Failed: ${error.response?.data?.message || error.message}`);
+    }
+};
 
 const unsubscribeYoutubeWebhook = async (accountId) => {
- if (!confirm('Are you sure you want to unsubscribe from real-time webhook?')) return
- try {
- await axios.post(`/youtube/unsubscribe/${accountId}`)
- router.reload()
- } catch (error) {
- console.error('Unsubscribe failed:', error.response?.data || error.message)
- }
-}
+    if (
+        !confirm("Are you sure you want to unsubscribe from real-time webhook?")
+    )
+        return;
+    try {
+        await axios.post(`/youtube/unsubscribe/${accountId}`);
+        router.reload();
+    } catch (error) {
+        console.error(
+            "Unsubscribe failed:",
+            error.response?.data || error.message,
+        );
+    }
+};
 
 const syncTwitter = async (accountId) => {
- try {
- const response = await axios.post(`/settings/social-accounts/${accountId}/twitter-sync`)
- console.log(response.data.message)
- } catch (error) {
- console.error('X sync failed:', error.response?.data || error.message)
- }
-}
+    try {
+        const response = await axios.post(
+            `/settings/social-accounts/${accountId}/twitter-sync`,
+        );
+        console.log(response.data.message);
+    } catch (error) {
+        console.error("X sync failed:", error.response?.data || error.message);
+    }
+};
 
 const disconnect = async (accountId) => {
- if (confirm('Are you sure you want to disconnect this account?')) {
- try {
- const response = await axios.post(`/settings/social-accounts/${accountId}/disconnect`)
- console.log(response.data.message)
- router.reload()
- } catch (error) {
- console.error('Disconnect failed:', error.response?.data || error.message)
- }
- }
-}
+    if (confirm("Are you sure you want to disconnect this account?")) {
+        try {
+            const response = await axios.post(
+                `/settings/social-accounts/${accountId}/disconnect`,
+            );
+            console.log(response.data.message);
+            router.reload();
+        } catch (error) {
+            console.error(
+                "Disconnect failed:",
+                error.response?.data || error.message,
+            );
+        }
+    }
+};
 
 const getStatusClass = (status) => {
- const classes = {
- connected: 'text-green-400',
- disconnected: 'text-red-400',
- expired: 'text-yellow-400',
- error: 'text-red-400',
- }
- return classes[status] || 'text-slate-400'
-}
+    const classes = {
+        connected: "text-green-400",
+        disconnected: "text-red-400",
+        expired: "text-yellow-400",
+        error: "text-red-400",
+    };
+    return classes[status] || "text-slate-400";
+};
 
 const formatDate = (date) => {
- return new Date(date).toLocaleDateString()
-}
+    return new Date(date).toLocaleDateString();
+};
 </script>
