@@ -299,6 +299,11 @@ class PublishAutoReply implements ShouldQueue
         $rootId = $parentComment->root_id ?: $parentComment->id;
         $platformRootId = $parentComment->platform_root_id ?: $parentComment->platform_comment_id;
 
+        // Since YouTube only supports one level of replies,
+        // the actual parent sent in the API call is the top-level (root) comment.
+        $platformParentId = $parentComment->platform_root_id
+            ?: $parentComment->platform_comment_id;
+
         SocialComment::updateOrCreate(
             [
                 'platform' => 'youtube',
@@ -312,7 +317,7 @@ class PublishAutoReply implements ShouldQueue
                 'parent_id' => $parentComment->id,
                 'root_id' => $rootId,
 
-                'platform_parent_id' => $parentComment->platform_comment_id,
+                'platform_parent_id' => $platformParentId,
                 'platform_root_id' => $platformRootId,
 
                 'author_name' => $parentComment->socialAccount->platform_account_name ?? 'YouTube Channel',
@@ -367,7 +372,7 @@ class PublishAutoReply implements ShouldQueue
                 'platform_parent_id' => $parentComment->platform_comment_id,
                 'platform_root_id' => $platformRootId,
 
-                'author_name' => $parentComment->socialAccount->platform_account_name ?? 'LinkedIn Organization',
+                'author_name' => $parentComment->socialAccount->platform_account_name ?? 'LinkedIn Page',
                 'platform_author_id' => $parentComment->socialAccount->platform_account_id,
 
                 'content' => $message,

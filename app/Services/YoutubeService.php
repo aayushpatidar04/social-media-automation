@@ -228,16 +228,28 @@ class YoutubeService
     {
         $accessToken = $this->validToken($account);
 
-        $response = Http::withToken($accessToken)->post("{$this->baseUrl}/comments?part=snippet", [
+        $payload = [
             'snippet' => [
                 'parentId' => $parentCommentId,
                 'textOriginal' => $message,
             ],
+        ];
+
+        Log::info('YouTube reply payload', [
+            'parent_id' => $parentCommentId,
+            'message_length' => strlen($message),
         ]);
+
+        $response = Http::withToken($accessToken)->post("{$this->baseUrl}/comments?part=snippet", $payload);
 
         $data = $response->json();
 
         if (!$response->successful()) {
+            Log::error('YouTube reply API error', [
+                'parent_id' => $parentCommentId,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
             throw new \Exception($data['error']['message'] ?? 'Unable to reply to YouTube comment.');
         }
 
@@ -246,12 +258,21 @@ class YoutubeService
 
     public function publishReply(SocialComment $comment, string $message, SocialAccount $account): array
     {
+        // YouTube only supports one level of replies.
+        // If the comment is itself a reply to another comment (level 2+),
+        // we must reply to the top-level (root) comment instead.
+        $parentId = $comment->platform_root_id
+            ?: $comment->platform_comment_id;
+
+        Log::info('YouTube publishReply', [
+            'comment_id' => $comment->id,
+            'platform_comment_id' => $comment->platform_comment_id,
+            'platform_root_id' => $comment->platform_root_id,
+            'resolved_parent_id' => $parentId,
+        ]);
+
         try {
-            $data = $this->replyToComment(
-                $account,
-                $comment->platform_comment_id,
-                $message
-            );
+            $data = $this->replyToComment($account, $parentId, $message);
 
             $comment->update([
                 'status' => 'replied',
