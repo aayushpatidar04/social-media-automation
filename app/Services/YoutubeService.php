@@ -7,6 +7,7 @@ use App\Models\SocialComment;
 use App\Models\SocialPost;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class YoutubeService
 {
@@ -178,21 +179,84 @@ class YoutubeService
 
     public function getVideos(SocialAccount $account, string $accessToken): array
     {
-        $response = Http::withToken($accessToken)->get("{$this->baseUrl}/search", [
-            'part' => 'snippet',
-            'forMine' => 'true',
-            'type' => 'video',
-            'maxResults' => 25,
-            'order' => 'date',
+        // Cache videos for 12 hours — avoids redundant API calls on every sync
+        $cacheKey = "youtube_videos_account_{$account->id}";
+
+        return Cache::remember($cacheKey, now()->addHours(12), function () use ($accessToken) {
+            return $this->fetchVideosFromApi($accessToken);
+        });
+    }
+
+    private function fetchVideosFromApi(string $accessToken): array
+    {
+
+        // Use channels.list to get the uploads playlist — costs only 1 quota unit
+        // instead of 100 for /search, which avoids daily quota exhaustion
+        $channelResponse = Http::withToken($accessToken)->get("{$this->baseUrl}/channels", [
+            'part' => 'contentDetails',
+            'mine' => 'true',
         ]);
 
-        $data = $response->json();
-
-        if (!$response->successful()) {
-            throw new \Exception($data['error']['message'] ?? 'Unable to fetch YouTube videos.');
+        if (!$channelResponse->successful()) {
+            throw new \Exception($channelResponse->json('error.message') ?? 'Unable to fetch YouTube channel.');
         }
 
-        return $data['items'] ?? [];
+        $channel = $channelResponse->json('items.0');
+        $uploadsPlaylistId = $channel['contentDetails']['relatedPlaylists']['uploads'] ?? null;
+
+        $videos = [];
+
+        if ($uploadsPlaylistId) {
+            // Get the 25 most recent uploads via the uploads playlist
+            $playlistResponse = Http::withToken($accessToken)->get("{$this->baseUrl}/playlistItems", [
+                'part' => 'contentDetails,snippet',
+                'playlistId' => $uploadsPlaylistId,
+                'maxResults' => 25,
+            ]);
+
+            if ($playlistResponse->successful()) {
+                $videos = $playlistResponse->json('items') ?? [];
+            }
+        }
+
+        // Enrich each video with privacy + comment status from /videos endpoint
+        $videoIds = array_filter(array_map(function ($v) {
+            return $v['contentDetails']['videoId'] ?? $v['snippet']['resourceId']['videoId'] ?? null;
+        }, $videos));
+
+        $statusMap = [];
+        if (!empty($videoIds)) {
+            $statusResponse = Http::withToken($accessToken)->get("{$this->baseUrl}/videos", [
+                'part' => 'status,snippet',
+                'id' => implode(',', array_slice($videoIds, 0, 50)),
+            ]);
+
+            if ($statusResponse->successful()) {
+                foreach ($statusResponse->json('items', []) as $item) {
+                    if (!isset($item['status'])) {
+                        continue;
+                    }
+                    $statusMap[$item['id']] = [
+                        'privacyStatus' => $item['status']['privacyStatus'] ?? 'public',
+                        'commentStatus' => $item['snippet']['commentStatus'] ?? 'allowed',
+                        'uploadStatus' => $item['status']['uploadStatus'] ?? 'processed',
+                        'embeddable' => $item['status']['embeddable'] ?? true,
+                    ];
+                }
+            }
+        }
+
+        // Reshape so callers can read videoId the same way as before
+        foreach ($videos as &$video) {
+            $vid = $video['contentDetails']['videoId'] ?? $video['snippet']['resourceId']['videoId'] ?? null;
+            $video['id'] = ['videoId' => $vid];
+            $video['_status'] = $statusMap[$vid] ?? [
+                'privacyStatus' => 'public',
+                'commentStatus' => 'allowed',
+            ];
+        }
+
+        return $videos;
     }
 
     public function getComments(string $accessToken, string $videoId): array
@@ -254,31 +318,12 @@ class YoutubeService
         $accessToken = $this->validToken($account);
         $videos = $this->getVideos($account, $accessToken);
 
-        // Pre-fetch privacy + comment status to skip restricted videos
-        $videoIds = array_filter(array_map(function ($v) {
-            return $v['id']['videoId'] ?? $v['snippet']['resourceId']['videoId'] ?? null;
-        }, $videos));
-
+        // getVideos() already attaches _status to each video — no extra API call needed
         $videoStatusMap = [];
-        if (!empty($videoIds)) {
-            // Use videos.list instead of search.list so we get status + snippet in one call
-            $statusResponse = Http::withToken($accessToken)->get("{$this->baseUrl}/videos", [
-                'part' => 'status,snippet,contentDetails',
-                'id' => implode(',', array_slice($videoIds, 0, 50)),
-            ]);
-            if ($statusResponse->successful()) {
-                foreach ($statusResponse->json('items', []) as $item) {
-                    // If status part is missing, this is a restricted video — skip it
-                    if (!isset($item['status'])) {
-                        continue;
-                    }
-                    $videoStatusMap[$item['id']] = [
-                        'privacyStatus' => $item['status']['privacyStatus'] ?? 'public',
-                        'commentStatus' => $item['snippet']['commentStatus'] ?? 'allowed',
-                        'uploadStatus' => $item['status']['uploadStatus'] ?? 'processed',
-                        'embeddable' => $item['status']['embeddable'] ?? true,
-                    ];
-                }
+        foreach ($videos as $v) {
+            $vid = $v['id']['videoId'] ?? $v['snippet']['resourceId']['videoId'] ?? null;
+            if ($vid && isset($v['_status'])) {
+                $videoStatusMap[$vid] = $v['_status'];
             }
         }
 
@@ -323,6 +368,15 @@ class YoutubeService
                 continue;
             }
             if (($vStatus['embeddable'] ?? 'true') === 'false') {
+                $skipped++;
+                continue;
+            }
+
+            // Also check for kids-content via channel's madeForKids flag from snippet
+            if (($vStatus['madeForKids'] ?? false) === true) {
+                Log::info('YouTube PubSubHubbub: skipping kids content (COPPA)', [
+                    'video_id' => $videoId,
+                ]);
                 $skipped++;
                 continue;
             }
