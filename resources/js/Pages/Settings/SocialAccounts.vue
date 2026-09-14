@@ -76,6 +76,12 @@
 
                         <div class="flex flex-wrap gap-2">
                             <button
+                                @click="syncNow(account.id, true)"
+                                class="bg-amber-700 hover:bg-amber-600 text-white rounded text-sm"
+                            >
+                                Full Sync
+                            </button>
+                            <button
                                 v-if="
                                     account.platform === 'facebook' ||
                                     account.platform === 'instagram'
@@ -84,13 +90,6 @@
                                 class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm"
                             >
                                 Sync Now
-                            </button>
-
-                            <button
-                                @click="syncNow(account.id, true)"
-                                class="...bg-amber-700 hover:bg-amber-600..."
-                            >
-                                Full Sync
                             </button>
 
                             <template v-if="account.platform === 'youtube'">
@@ -129,7 +128,7 @@
                                 @click="syncLinkedIn(account.id)"
                                 class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm"
                             >
-                                Sync LinkedIn
+                                Sync Now
                             </button>
                             <button
                                 @click="disconnect(account.id)"
