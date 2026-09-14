@@ -29,100 +29,46 @@ class TwitterService
         return rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
     }
 
-    public function getAuthUrl(string $state, string $codeChallenge): string
+    public function exchangeCodeForToken(string $code): array
     {
-        $params = http_build_query([
-            'response_type' => 'code',
-            'client_id' => env('TWITTER_CLIENT_ID'),
-            'redirect_uri' => env('TWITTER_REDIRECT_URI'),
-            'scope' => 'tweet.read tweet.write users.read offline.access',
-            'state' => $state,
-            'code_challenge' => $codeChallenge,
-            'code_challenge_method' => 'S256',
+        $clientId = env('TWITTER_CLIENT_ID');
+        $clientSecret = env('TWITTER_CLIENT_SECRET');
+        $redirectUri = env('TWITTER_REDIRECT_URI');
+
+        $response = Http::asForm()->post('https://api.x.com/2/oauth2/token', [
+            'code' => $code,
+            'grant_type' => 'authorization_code',
+            'client_id' => $clientId,
+            'client_secret' => $clientSecret,
+            'redirect_uri' => $redirectUri,
         ]);
 
-        return "https://x.com/i/oauth2/authorize?{$params}";
-    }
-
-    public function exchangeCodeForToken(string $code, string $codeVerifier): array
-    {
-        $response = Http::asForm()
-            ->withBasicAuth(env('TWITTER_CLIENT_ID'), env('TWITTER_CLIENT_SECRET'))
-            ->post('https://api.x.com/2/oauth2/token', [
-                'code' => $code,
-                'grant_type' => 'authorization_code',
-                'client_id' => env('TWITTER_CLIENT_ID'),
-                'redirect_uri' => env('TWITTER_REDIRECT_URI'),
-                'code_verifier' => $codeVerifier,
-            ]);
-
-        $data = $response->json();
-
         if (!$response->successful()) {
-            throw new \Exception($data['error_description'] ?? $data['error'] ?? 'X token exchange failed.');
+            throw new \Exception('Twitter token exchange failed: ' . $response->body());
         }
 
-        return $data;
+        return $response->json();
     }
 
-    public function refreshAccessToken(SocialAccount $account): string
-    {
-        if (!$account->refresh_token) {
-            throw new \Exception('X refresh token missing. Please reconnect X.');
-        }
-
-        $response = Http::asForm()
-            ->withBasicAuth(env('TWITTER_CLIENT_ID'), env('TWITTER_CLIENT_SECRET'))
-            ->post('https://api.x.com/2/oauth2/token', [
-                'refresh_token' => $account->refresh_token,
-                'grant_type' => 'refresh_token',
-                'client_id' => env('TWITTER_CLIENT_ID'),
-            ]);
-
-        $data = $response->json();
-
-        if (!$response->successful()) {
-            throw new \Exception($data['error_description'] ?? $data['error'] ?? 'X token refresh failed.');
-        }
-
-        $account->update([
-            'access_token' => $data['access_token'],
-            'refresh_token' => $data['refresh_token'] ?? $account->refresh_token,
-            'token_expires_at' => now()->addSeconds($data['expires_in'] ?? 7200),
-        ]);
-
-        return $data['access_token'];
-    }
-
-    public function validToken(SocialAccount $account): string
-    {
-        if (!$account->token_expires_at || now()->greaterThan($account->token_expires_at->copy()->subMinutes(5))) {
-            return $this->refreshAccessToken($account);
-        }
-
-        return $account->access_token;
-    }
-
-    public function getCurrentUser(string $accessToken): array
+    public function getMyProfile(string $accessToken): ?array
     {
         $response = Http::withToken($accessToken)->get("{$this->baseUrl}/users/me", [
-            'user.fields' => 'id,name,username,profile_image_url',
+            'user.fields' => 'id,name,username,description,public_metrics',
         ]);
 
-        $data = $response->json();
-
         if (!$response->successful()) {
-            throw new \Exception($data['detail'] ?? $data['title'] ?? 'Unable to fetch X user.');
+            return null;
         }
 
-        return $data['data'];
+        return $response->json('data');
     }
 
     public function syncComments(SocialAccount $account, array $options = []): int
     {
         $accessToken = $this->validToken($account);
+        $isFullSync = $options['full_sync'] ?? false;
 
-        // Use since_id to only fetch new mentions since last sync
+        // Use since_id for incremental sync (only new mentions since last run)
         $sinceId = $account->metadata['last_synced_tweet_id'] ?? null;
 
         $params = [
@@ -132,7 +78,8 @@ class TwitterService
             'user.fields' => 'id,name,username',
         ];
 
-        if ($sinceId) {
+        // In full sync mode, don't use since_id — fetch all
+        if (!$isFullSync && $sinceId) {
             $params['since_id'] = $sinceId;
         }
 
@@ -144,16 +91,22 @@ class TwitterService
         $data = $response->json();
 
         $windowDays = $options['comment_window_days'] ?? 7;
-        $cutoff = now()->subDays($windowDays);
 
-        $data = array_filter($data, function ($tweet) use ($cutoff) {
-            return Carbon::parse($tweet['created_at'])->gte($cutoff);
-        });
+        // In full sync mode or window = 0, don't filter by date
+        if (!$isFullSync && $windowDays > 0) {
+            $cutoff = now()->subDays($windowDays);
+
+            // Filter tweets by date — only the tweets array, not the whole response
+            $data['data'] = array_filter($data['data'] ?? [], function ($tweet) use ($cutoff) {
+                return Carbon::parse($tweet['created_at'])->gte($cutoff);
+            });
+        }
 
         Log::info('X mentions response', [
             'status' => $response->status(),
             'since_id' => $sinceId,
             'count' => count($data['data'] ?? []),
+            'full_sync' => $isFullSync,
         ]);
 
         if (!$response->successful()) {
@@ -209,25 +162,31 @@ class TwitterService
             if ($storedComment->wasRecentlyCreated) {
                 $total++;
 
-                if ($this->shouldAnalyzeComment($account, $storedComment)) {
+                // Only dispatch AI in normal sync
+                if (!$isFullSync && $this->shouldAnalyzeComment($account, $storedComment)) {
                     AnalyzeWithOllama::dispatch($storedComment);
                 }
             }
 
-            // Track highest tweet ID for next incremental sync
             if (!$maxTweetId || intval($tweet['id']) > intval($maxTweetId)) {
                 $maxTweetId = $tweet['id'];
             }
         }
 
         // Save cursor for next sync
-        if ($maxTweetId) {
+        if ($maxTweetId && !$isFullSync) {
             $metadata = $account->metadata ?? [];
             $metadata['last_synced_tweet_id'] = $maxTweetId;
             $account->update(['metadata' => $metadata]);
         }
 
         $account->update(['last_synced_at' => now()]);
+
+        Log::info('X sync completed', [
+            'account_id' => $account->id,
+            'new_comments' => $total,
+            'full_sync' => $isFullSync,
+        ]);
 
         return $total;
     }
@@ -257,28 +216,39 @@ class TwitterService
         return $data;
     }
 
-    public function publishReply(SocialComment $comment, string $message, SocialAccount $account): array
+    private function validToken(SocialAccount $account): string
     {
-        try {
-            $data = $this->replyToTweet($account, $comment->platform_comment_id, $message);
-
-            $comment->update([
-                'status' => 'replied',
-                'ai_response_text' => $message,
-                'replied_at' => now(),
-            ]);
-
-            return $data;
-        } catch (\Exception $e) {
-            Log::error('X publish reply exception: ' . $e->getMessage());
-            throw $e;
+        if ($account->token_expires_at && $account->token_expires_at->isFuture()) {
+            return $account->access_token;
         }
+
+        if (!$account->refresh_token) {
+            throw new \Exception('Twitter access token expired and no refresh token.');
+        }
+
+        $response = Http::asForm()->post('https://api.x.com/2/oauth2/token', [
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $account->refresh_token,
+            'client_id' => env('TWITTER_CLIENT_ID'),
+            'client_secret' => env('TWITTER_CLIENT_SECRET'),
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('Failed to refresh X token.');
+        }
+
+        $tokenData = $response->json();
+
+        $account->update([
+            'access_token' => $tokenData['access_token'],
+            'token_expires_at' => now()->addSeconds($tokenData['expires_in'] ?? 7200),
+        ]);
+
+        return $tokenData['access_token'];
     }
 
-    private function shouldAnalyzeComment(
-        SocialAccount $account,
-        SocialComment $comment
-    ): bool {
+    private function shouldAnalyzeComment(SocialAccount $account, SocialComment $comment): bool
+    {
         if (!$comment->wasRecentlyCreated) {
             return false;
         }
@@ -295,8 +265,6 @@ class TwitterService
             return false;
         }
 
-        return $comment->commented_at->gte(
-            $account->auto_reply_started_at
-        );
+        return $comment->commented_at->gte($account->auto_reply_started_at);
     }
 }

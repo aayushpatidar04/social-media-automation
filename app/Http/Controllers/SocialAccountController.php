@@ -34,32 +34,48 @@ class SocialAccountController extends Controller
         ]);
     }
 
-    /**
-     * Sync comments from a social account
-     */
     public function sync(Request $request, SocialAccount $account)
     {
-        // Check authorization
         if ($account->organization_id !== Auth::user()->organization_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         try {
-            Log::info('Starting sync for account: ' . $account->platform_account_name . ' (' . $account->platform . ')');
+            $fullSync = $request->boolean('full_sync', false);
 
-            // Dispatch platform-specific sync job
+            Log::info('Starting sync for account: ' . $account->platform_account_name . ' (' . $account->platform . ') full_sync: ' . ($fullSync ? 'yes' : 'no'));
+
+            if ($fullSync) {
+                $options = [
+                    'post_window_days' => 0,
+                    'comment_window_days' => 0,
+                    'full_sync' => true,
+                ];
+            } else {
+                $options = [
+                    'post_window_days' => config('sync.post_window_days', 30),
+                    'comment_window_days' => config('sync.comment_window_days', 7),
+                    'full_sync' => false,
+                ];
+            }
+
             match ($account->platform) {
-                'facebook' => SyncFacebookComments::dispatch($account),
-                'instagram' => SyncInstagramComments::dispatch($account),
-                'youtube' => SyncYoutubeComments::dispatch($account),
-                'twitter' => SyncTwitterComments::dispatch($account),
-                'linkedin' => SyncLinkedInComments::dispatch($account),
+                'facebook' => SyncFacebookComments::dispatch($account, $options, $fullSync),
+                'instagram' => SyncInstagramComments::dispatch($account, $options, $fullSync),
+                'youtube' => SyncYoutubeComments::dispatch($account, $options, $fullSync),
+                'twitter' => SyncTwitterComments::dispatch($account, $options, $fullSync),
+                'linkedin' => SyncLinkedInComments::dispatch($account, $options, $fullSync),
                 default => Log::warning('No sync job for platform: ' . $account->platform),
             };
 
+            $message = $fullSync
+                ? 'Full sync started! All posts and comments will be fetched. AI responses will NOT be generated.'
+                : 'Sync started! New comments will be updated shortly.';
+
             return response()->json([
-                'message' => 'Sync started! Comments will be updated shortly.',
+                'message' => $message,
                 'status' => 'processing',
+                'full_sync' => $fullSync,
             ]);
         } catch (\Exception $e) {
             Log::error('Sync error: ' . $e->getMessage());
@@ -69,18 +85,13 @@ class SocialAccountController extends Controller
         }
     }
 
-    /**
-     * Disconnect a social account
-     */
     public function disconnect(Request $request, SocialAccount $account)
     {
-        // Check authorization
         if ($account->organization_id !== Auth::user()->organization_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         try {
-            // Deactivate the account
             $account->update([
                 'status' => 'disconnected',
                 'is_active' => false,
@@ -100,9 +111,6 @@ class SocialAccountController extends Controller
         }
     }
 
-    /**
-     * Reconnect a disconnected account
-     */
     public function reconnect(Request $request, SocialAccount $account)
     {
         if ($account->organization_id !== Auth::user()->organization_id) {
@@ -124,9 +132,6 @@ class SocialAccountController extends Controller
         }
     }
 
-    /**
-     * Test account connection
-     */
     public function test(Request $request, SocialAccount $account)
     {
         if ($account->organization_id !== Auth::user()->organization_id) {

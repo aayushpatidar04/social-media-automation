@@ -18,15 +18,15 @@ class SyncYoutubeComments implements ShouldQueue
     public int $timeout = 300;
     public int $tries = 2;
 
-    public function __construct(private SocialAccount $account)
+    public function __construct(private SocialAccount $account, public array $options = [], public bool $fullSync = false)
     {
     }
 
     public function handle(YoutubeService $youtube): void
     {
-        Log::info('Starting YouTube sync for account: ' . $this->account->platform_account_name);
+        Log::info('Starting YouTube sync for account: ' . $this->account->platform_account_name . ' (full_sync: ' . ($this->fullSync ? 'yes' : 'no') . ')');
 
-        $count = $youtube->syncComments($this->account);
+        $count = $youtube->syncComments($this->account, $this->options);
 
         Log::info('YouTube sync completed. Comments synced: ' . $count);
 
@@ -36,7 +36,7 @@ class SyncYoutubeComments implements ShouldQueue
             'action' => 'youtube_sync_completed',
             'entity_type' => 'social_account',
             'entity_id' => $this->account->id,
-            'data' => ['comments_synced' => $count],
+            'data' => ['comments_synced' => $count, 'full_sync' => $this->fullSync],
         ]);
     }
 }

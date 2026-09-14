@@ -20,8 +20,20 @@ class InstagramService
     {
         $postWindowDays = $options['post_window_days'] ?? 30;
         $commentWindowDays = $options['comment_window_days'] ?? 7;
-        $postCutoff = now()->subDays($postWindowDays);
-        $commentCutoff = now()->subDays($commentWindowDays);
+        $isFullSync = $options['full_sync'] ?? false;
+
+        // Full sync (window = 0) = no date cutoff
+        if ($isFullSync || $postWindowDays === 0) {
+            $postCutoff = Carbon::createFromTimestamp(0);
+        } else {
+            $postCutoff = now()->subDays($postWindowDays);
+        }
+
+        if ($isFullSync || $commentWindowDays === 0) {
+            $commentCutoff = Carbon::createFromTimestamp(0);
+        } else {
+            $commentCutoff = now()->subDays($commentWindowDays);
+        }
 
         $totalComments = 0;
         $skippedOldPosts = 0;
@@ -29,7 +41,6 @@ class InstagramService
         $mediaList = $this->getMedia($account);
 
         foreach ($mediaList as $media) {
-            // Skip media older than the post window
             $publishedAt = $media['timestamp'] ?? null;
             if ($publishedAt && Carbon::parse($publishedAt)->lt($postCutoff)) {
                 $skippedOldPosts++;
@@ -56,7 +67,6 @@ class InstagramService
             );
 
             foreach ($comments as $comment) {
-                // Skip comments older than the window
                 $commentedAt = $comment['timestamp'] ?? null;
                 if ($commentedAt && Carbon::parse($commentedAt)->lt($commentCutoff)) {
                     continue;
@@ -72,13 +82,13 @@ class InstagramService
                 if ($storedRootComment?->wasRecentlyCreated) {
                     $totalComments++;
 
-                    if ($this->shouldAnalyzeComment($account, $storedRootComment)) {
+                    // Only dispatch AI in normal sync, skip in full sync
+                    if (!$isFullSync && $this->shouldAnalyzeComment($account, $storedRootComment)) {
                         AnalyzeWithOllama::dispatch($storedRootComment);
                     }
                 }
 
                 foreach (($comment['replies']['data'] ?? []) as $reply) {
-                    // Skip replies older than the window
                     $replyAt = $reply['timestamp'] ?? null;
                     if ($replyAt && Carbon::parse($replyAt)->lt($commentCutoff)) {
                         continue;
@@ -94,7 +104,7 @@ class InstagramService
                     if ($storedReply?->wasRecentlyCreated) {
                         $totalComments++;
 
-                        if ($this->shouldAnalyzeComment($account, $storedReply)) {
+                        if (!$isFullSync && $this->shouldAnalyzeComment($account, $storedReply)) {
                             AnalyzeWithOllama::dispatch($storedReply);
                         }
                     }
@@ -108,230 +118,56 @@ class InstagramService
             'account_id' => $account->id,
             'total_comments' => $totalComments,
             'skipped_old_posts' => $skippedOldPosts,
+            'full_sync' => $isFullSync,
         ]);
 
         return $totalComments;
     }
 
-    private function getConnectedInstagramAccount(
-        SocialAccount $account
-    ): ?string {
-        $response = Http::get(
-            "https://graph.facebook.com/{$this->graphVersion}/{$account->platform_account_id}",
-            [
-                'fields' => 'connected_instagram_account',
-                'access_token' => $account->access_token,
-            ]
-        );
-
-        $data = $response->json();
-
-        Log::info('Instagram Account Lookup', $data);
-
-        if (!$response->successful()) {
-            throw new \Exception(
-                $data['error']['message'] ?? 'Unable to fetch Instagram account'
-            );
-        }
-
-        $instagramId = $data['connected_instagram_account']['id'] ?? null;
-
-        if ($instagramId) {
-            $account->metadata = array_merge($account->metadata ?? [], [
-                'instagram_id' => $instagramId,
-            ]);
-            $account->save();
-        }
-
-        return $data['connected_instagram_account']['id'] ?? null;
-    }
-
-    private function getMedia(SocialAccount $account): array
+    public function syncSingleCommentFromWebhook(SocialAccount $account, array $value): ?SocialComment
     {
-        $instagramId = $this->getConnectedInstagramAccount($account);
+        $commentId = $value['comment_id'] ?? null;
+        $postId = $value['post_id'] ?? data_get($value, 'media_id');
 
-        if (!$instagramId) {
-            Log::warning(
-                'No Instagram account connected to page ' .
-                $account->platform_account_name
-            );
-
-            return [];
-        }
-
-        Log::info("Instagram ID: {$instagramId}");
-
-        $response = Http::get(
-            "https://graph.facebook.com/{$this->graphVersion}/{$instagramId}/media",
-            [
-                'fields' => 'id,caption,media_type,timestamp',
-                'limit' => 100,
-                'access_token' => $account->access_token,
-            ]
-        );
-
-        $data = $response->json();
-
-        Log::info('Instagram Media Response', [
-            'status' => $response->status(),
-            'body' => $response->body(),
-        ]);
-
-        if (!$response->successful()) {
-            throw new \Exception(
-                $data['error']['message'] ?? 'Unable to fetch media'
-            );
-        }
-
-        return $data['data'] ?? [];
-    }
-
-    private function getMediaComments(SocialAccount $account, string $mediaId): array
-    {
-        $response = Http::get(
-            "https://graph.facebook.com/{$this->graphVersion}/{$mediaId}/comments",
-            [
-                'fields' => 'id,text,username,timestamp,from,parent_id,replies{id,text,username,timestamp,from,parent_id}',
-                'limit' => 100,
-                'access_token' => $account->access_token,
-            ]
-        );
-
-        $data = $response->json();
-
-        if (!$response->successful()) {
-            Log::error('Instagram media comments fetch failed', [
-                'media_id' => $mediaId,
-                'response' => $data,
-            ]);
-
-            return [];
-        }
-
-        return $data['data'] ?? [];
-    }
-
-    /**
-     * Publish a reply to an Instagram comment
-     */
-    public function publishReply(SocialComment $comment, string $message, SocialAccount $account): array
-    {
-        try {
-            $response = Http::post(
-                "https://graph.facebook.com/{$this->graphVersion}/{$comment->platform_comment_id}/replies",
-                [
-                    'message' => $message,
-                    'access_token' => $account->access_token,
-                ]
-            );
-
-            $data = $response->json();
-
-            if (!$response->successful() || isset($data['error'])) {
-                throw new \Exception(
-                    data_get($data, 'error.message', 'Instagram publish reply failed')
-                );
-            }
-
-            $comment->update([
-                'status' => 'replied',
-                'ai_response_text' => $message,
-                'replied_at' => now(),
-            ]);
-
-            return $data;
-        } catch (\Exception $e) {
-            Log::error('Instagram publish reply exception', [
-                'comment_id' => $comment->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            throw $e;
-        }
-    }
-
-    public function syncSingleCommentFromWebhook(SocialAccount $account, string $commentId): ?SocialComment
-    {
-        $comment = $this->getSingleInstagramComment($account, $commentId);
-
-        if (!$comment) {
+        if (!$commentId || !$postId) {
             return null;
         }
 
-        $mediaId = $comment['media']['id'] ?? null;
-
         $storedPost = SocialPost::firstOrCreate(
             [
-                'platform_post_id' => $mediaId ?: 'unknown_' . $commentId,
+                'platform_post_id' => $postId,
                 'platform' => 'instagram',
             ],
             [
                 'organization_id' => $account->organization_id,
                 'social_account_id' => $account->id,
-                'content' => $comment['media']['caption'] ?? '',
+                'content' => data_get($value, 'media.caption', ''),
                 'posted_at' => now(),
-                'raw_payload' => data_get($comment, 'media'),
+                'raw_payload' => data_get($value, 'media'),
             ]
         );
 
-        $platformCommentId = $comment['id'] ?? null;
-        $platformParentId = $comment['parent_id'] ?? null;
-
-        if (!$platformCommentId) {
-            return null;
-        }
-
-        /**
-         * Instagram:
-         * - If parent_id exists, this is a reply.
-         * - If parent_id is empty/null, this is root/top-level comment.
-         */
         $parentComment = null;
-
-        if ($platformParentId) {
+        $parentId = data_get($value, 'parent_id');
+        if ($parentId) {
             $parentComment = SocialComment::where('platform', 'instagram')
-                ->where('platform_comment_id', $platformParentId)
+                ->where('platform_comment_id', $parentId)
                 ->first();
         }
 
-        $rootId = null;
-        $platformRootId = $platformCommentId;
+        $rootId = $parentComment?->root_id ?: null;
+        $platformRootId = $parentComment?->platform_root_id ?? $parentComment?->platform_comment_id ?? $commentId;
 
-        if ($parentComment) {
-            $rootId = $parentComment->root_id ?: $parentComment->id;
-            $platformRootId = $parentComment->platform_root_id ?: $parentComment->platform_comment_id;
-        }
+        $from = data_get($value, 'from', []);
+        $fromId = data_get($from, 'id');
+        $fromUsername = data_get($from, 'username', 'unknown');
+        $fromName = data_get($from, 'username', 'Unknown');
 
-        $authorName = $comment['username'] ?? data_get($comment, 'from.username', 'Unknown');
-
-        /**
-         * Prefer from.id if available.
-         * If not available, use username as fallback.
-         */
-        $authorId = data_get($comment, 'from.id')
-            ?? $comment['username']
-            ?? null;
-
-        if (!$authorId) {
-            Log::warning('Instagram comment missing author id', [
-                'comment_id' => $platformCommentId,
-                'comment' => $comment,
-            ]);
-
-            return null;
-        }
-
-        $isOwnComment = false;
-
-        $instagramId = $account->metadata['instagram_id'] ?? null;
-
-        if ($instagramId && $authorId === $instagramId) {
-            $isOwnComment = true;
-        }
+        $isOwnComment = $fromId === $account->platform_account_id;
 
         $storedComment = SocialComment::updateOrCreate(
             [
-                'platform_comment_id' => $platformCommentId,
+                'platform_comment_id' => $commentId,
                 'platform' => 'instagram',
             ],
             [
@@ -342,22 +178,20 @@ class InstagramService
                 'parent_id' => $parentComment?->id,
                 'root_id' => $rootId,
 
-                'platform_parent_id' => $platformParentId,
+                'platform_parent_id' => $parentId,
                 'platform_root_id' => $platformRootId,
 
-                'author_name' => $authorName,
-                'platform_author_id' => $authorId,
-                'content' => $comment['text'] ?? '',
+                'author_name' => $fromName,
+                'platform_author_id' => $fromId,
+                'author_profile_url' => 'https://instagram.com/' . $fromUsername,
+                'content' => $value['text'] ?? '',
 
                 'direction' => $isOwnComment ? 'outbound' : 'inbound',
-                'sender_type' => $isOwnComment ? 'page' : 'customer',
+                'sender_type' => $isOwnComment ? 'own' : 'customer',
                 'is_own_comment' => $isOwnComment,
-                'raw_payload' => $comment,
 
-                'commented_at' => isset($comment['timestamp'])
-                    ? \Carbon\Carbon::parse($comment['timestamp'])->setTimezone(config('app.timezone'))
-                    : now()->setTimezone(config('app.timezone')),
-
+                'raw_payload' => $value,
+                'commented_at' => now(),
             ]
         );
 
@@ -377,38 +211,105 @@ class InstagramService
             }
         }
 
-        if ($storedComment?->wasRecentlyCreated) {
-            if ($this->shouldAnalyzeComment($account, $storedComment)) {
-                $storedComment->update(['status' => 'new']);
-                AnalyzeWithOllama::dispatch($storedComment);
-            }
-        }
-
         return $storedComment;
     }
 
-    private function getSingleInstagramComment(SocialAccount $account, string $commentId): ?array
+    private function getMedia(SocialAccount $account): array
     {
         $response = Http::get(
-            "https://graph.facebook.com/{$this->graphVersion}/{$commentId}",
+            "https://graph.instagram.com/{$this->graphVersion}/{$account->platform_account_id}/media",
             [
-                'fields' => 'id,text,username,timestamp,media,parent_id,from',
+                'fields' => 'id,caption,timestamp,media_type,media_url,permalink',
+                'limit' => 25,
+                'access_token' => $account->access_token,
+            ]
+        );
+
+        Log::info('Instagram Media Response', [
+            'status' => $response->status(),
+            'body' => $response->body(),
+        ]);
+
+        $data = $response->json();
+
+        if (!$response->successful() || isset($data['error'])) {
+            throw new \Exception($data['error']['message'] ?? 'Instagram API Error');
+        }
+
+        return $data['data'] ?? [];
+    }
+
+    private function getMediaComments(SocialAccount $account, string $mediaId): array
+    {
+        $response = Http::get(
+            "https://graph.instagram.com/{$this->graphVersion}/{$mediaId}/comments",
+            [
+                'fields' => 'id,text,timestamp,username,from',
+                'limit' => 50,
                 'access_token' => $account->access_token,
             ]
         );
 
         $data = $response->json();
 
-        if (!$response->successful()) {
-            Log::error('Instagram single comment fetch failed', [
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
-
-            return null;
+        if (!$response->successful() || isset($data['error'])) {
+            Log::error('Instagram comments error', ['response' => $data]);
+            return [];
         }
 
-        return $data;
+        $comments = $data['data'] ?? [];
+
+        // Fetch replies for each comment
+        foreach ($comments as &$comment) {
+            $replies = $this->getCommentReplies($account, $comment['id']);
+            $comment['replies'] = ['data' => $replies];
+        }
+
+        return $comments;
+    }
+
+    private function getCommentReplies(SocialAccount $account, string $commentId): array
+    {
+        $response = Http::get(
+            "https://graph.instagram.com/{$this->graphVersion}/{$commentId}/replies",
+            [
+                'fields' => 'id,text,timestamp,username,from',
+                'access_token' => $account->access_token,
+            ]
+        );
+
+        $data = $response->json();
+
+        if (!$response->successful() || isset($data['error'])) {
+            return [];
+        }
+
+        return $data['data'] ?? [];
+    }
+
+    public function publishReply(SocialComment $comment, string $message, SocialAccount $account)
+    {
+        try {
+            $response = Http::post(
+                "https://graph.instagram.com/{$this->graphVersion}/{$comment->platform_comment_id}/replies",
+                [
+                    'message' => $message,
+                    'access_token' => $account->access_token,
+                ]
+            );
+
+            $data = $response->json();
+
+            if (!$response->successful() || isset($data['error'])) {
+                Log::error('Instagram reply error', ['response' => $data]);
+                return false;
+            }
+
+            return $data;
+        } catch (\Exception $e) {
+            Log::error('Exception publishing Instagram reply: ' . $e->getMessage());
+            return false;
+        }
     }
 
     private function storeInstagramManualComment(
@@ -423,28 +324,18 @@ class InstagramService
             return null;
         }
 
-        $platformParentId = $comment['parent_id'] ?? null;
+        $from = data_get($comment, 'from', []);
+        $fromId = data_get($from, 'id');
+        $fromUsername = data_get($from, 'username', 'unknown');
 
-        if (!$platformParentId && $parentComment) {
-            $platformParentId = $parentComment->platform_comment_id;
-        }
-
-        $authorName = $comment['username']
-            ?? data_get($comment, 'from.username')
-            ?? 'Unknown';
-
-        $authorId = data_get($comment, 'from.id')
-            ?? $comment['username']
-            ?? null;
-
-        if (!$authorId) {
-            Log::warning('Instagram manual sync missing author id', [
+        if (!$fromId) {
+            Log::warning('Instagram manual sync missing author', [
                 'comment_id' => $commentId,
-                'comment' => $comment,
             ]);
-
             return null;
         }
+
+        $isOwnComment = (string) $fromId === (string) $account->platform_account_id;
 
         $rootId = null;
         $platformRootId = $commentId;
@@ -452,14 +343,6 @@ class InstagramService
         if ($parentComment) {
             $rootId = $parentComment->root_id ?: $parentComment->id;
             $platformRootId = $parentComment->platform_root_id ?: $parentComment->platform_comment_id;
-        }
-
-        $isOwnComment = false;
-
-        $instagramId = $account->metadata['instagram_id'] ?? null;
-
-        if ($instagramId && $authorId === $instagramId) {
-            $isOwnComment = true;
         }
 
         $storedComment = SocialComment::updateOrCreate(
@@ -475,23 +358,24 @@ class InstagramService
                 'parent_id' => $parentComment?->id,
                 'root_id' => $rootId,
 
-                'platform_parent_id' => $platformParentId,
+                'platform_parent_id' => $parentComment?->platform_comment_id,
                 'platform_root_id' => $platformRootId,
 
-                'author_name' => $authorName,
-                'platform_author_id' => $authorId,
+                'author_name' => $fromUsername,
+                'platform_author_id' => $fromId,
+                'author_profile_url' => 'https://instagram.com/' . $fromUsername,
                 'content' => $comment['text'] ?? '',
 
                 'direction' => $isOwnComment ? 'outbound' : 'inbound',
-                'sender_type' => $isOwnComment ? 'page' : 'customer',
+                'sender_type' => $isOwnComment ? 'own' : 'customer',
                 'is_own_comment' => $isOwnComment,
 
                 'raw_payload' => $comment,
                 'commented_at' => isset($comment['timestamp'])
-                    ? \Carbon\Carbon::parse($comment['timestamp'])->setTimezone(config('app.timezone'))
-                    : now()->setTimezone(config('app.timezone')),
+                    ? \Carbon\Carbon::parse($comment['timestamp'])
+                    : now(),
 
-                'status' => $isOwnComment ? 'sent' : 'new',
+                'status' => 'new',
             ]
         );
 
@@ -506,8 +390,7 @@ class InstagramService
             $parentComment->increment('reply_count');
 
             if ($parentComment->root_id) {
-                SocialComment::where('id', $parentComment->root_id)
-                    ->increment('reply_count');
+                SocialComment::where('id', $parentComment->root_id)->increment('reply_count');
             }
         }
 

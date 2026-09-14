@@ -18,15 +18,15 @@ class SyncLinkedInComments implements ShouldQueue
     public int $timeout = 300;
     public int $tries = 2;
 
-    public function __construct(private SocialAccount $account)
+    public function __construct(private SocialAccount $account, public array $options = [], public bool $fullSync = false)
     {
     }
 
     public function handle(LinkedInService $linkedin): void
     {
-        Log::info('Starting LinkedIn sync for account: ' . $this->account->platform_account_name);
+        Log::info('Starting LinkedIn sync for account: ' . $this->account->platform_account_name . ' (full_sync: ' . ($this->fullSync ? 'yes' : 'no') . ')');
 
-        $count = $linkedin->syncComments($this->account);
+        $count = $linkedin->syncComments($this->account, $this->options);
 
         Log::info('LinkedIn sync completed. Comments synced: ' . $count);
 
@@ -36,7 +36,7 @@ class SyncLinkedInComments implements ShouldQueue
             'action' => 'linkedin_sync_completed',
             'entity_type' => 'social_account',
             'entity_id' => $this->account->id,
-            'data' => ['comments_synced' => $count],
+            'data' => ['comments_synced' => $count, 'full_sync' => $this->fullSync],
         ]);
     }
 }

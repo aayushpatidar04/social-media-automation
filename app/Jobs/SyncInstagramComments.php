@@ -17,30 +17,33 @@ class SyncInstagramComments implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $timeout = 300; // 5 minutes
+    public $timeout = 300;
     public $tries = 3;
     public $maxExceptions = 3;
 
-    private SocialAccount $account;
-
-    public function __construct(SocialAccount $account)
+    public function __construct(private SocialAccount $account, public array $options = [], public bool $fullSync = false)
     {
-        $this->account = $account;
     }
 
-    /**
-     * Execute the job.
-     */
     public function handle()
     {
         $service = new InstagramService();
 
         $count = $service->syncComments(
-            $this->account
+            $this->account,
+            $this->options
         );
 
-        Log::info(
-            "Instagram comments synced: {$count}"
-        );
+        Log::info('Instagram sync completed for account: ' . $this->account->platform_account_name . ' (full_sync: ' . ($this->fullSync ? 'yes' : 'no') . ')');
+        Log::info('Instagram comments synced: ' . $count);
+
+        \App\Models\ActivityLog::create([
+            'organization_id' => $this->account->organization_id,
+            'user_id' => $this->account->user_id,
+            'action' => 'instagram_sync_completed',
+            'entity_type' => 'social_account',
+            'entity_id' => $this->account->id,
+            'data' => ['comments_synced' => $count, 'full_sync' => $this->fullSync],
+        ]);
     }
 }

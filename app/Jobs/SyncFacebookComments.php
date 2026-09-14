@@ -17,35 +17,31 @@ class SyncFacebookComments implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $timeout = 300; // 5 minutes
+    public $timeout = 300;
     public $tries = 3;
     public $maxExceptions = 3;
 
-    private SocialAccount $account;
-
-    public function __construct(SocialAccount $account)
+    public function __construct(private SocialAccount $account, public array $options = [], public bool $fullSync = false)
     {
-        $this->account = $account;
     }
 
     public function handle()
     {
         try {
-            Log::info('Starting sync job for account: ' . $this->account->platform_account_name);
+            Log::info('Starting sync job for account: ' . $this->account->platform_account_name . ' (full_sync: ' . ($this->fullSync ? 'yes' : 'no') . ')');
 
             $service = new FacebookService();
-            $commentCount = $service->syncPageComments($this->account);
+            $commentCount = $service->syncPageComments($this->account, $this->options);
 
             Log::info('Sync job completed. Comments synced: ' . $commentCount);
 
-            // Broadcast update
             \App\Models\ActivityLog::create([
                 'organization_id' => $this->account->organization_id,
                 'user_id' => $this->account->user_id,
                 'action' => 'sync_completed',
                 'entity_type' => 'social_account',
                 'entity_id' => $this->account->id,
-                'data' => ['comments_synced' => $commentCount],
+                'data' => ['comments_synced' => $commentCount, 'full_sync' => $this->fullSync],
             ]);
 
         } catch (\Exception $e) {
@@ -53,7 +49,7 @@ class SyncFacebookComments implements ShouldQueue
                 'account_id' => $this->account->id,
                 'trace' => $e->getTraceAsString(),
             ]);
-            
+
             throw $e;
         }
     }
