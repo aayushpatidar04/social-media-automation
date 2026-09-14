@@ -77,7 +77,7 @@
                         <div class="flex flex-wrap gap-2">
                             <button
                                 @click="syncNow(account.id, true)"
-                                class="bg-amber-700 hover:bg-amber-600 text-white rounded text-sm"
+                                class="px-3 py-2 bg-amber-700 hover:bg-amber-600 text-white rounded text-sm"
                             >
                                 Full Sync
                             </button>
