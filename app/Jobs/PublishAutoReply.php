@@ -78,8 +78,24 @@ class PublishAutoReply implements ShouldQueue
                 );
             }
 
+            if ($this->comment->platform === 'twitter') {
+                $this->storeTwitterOutboundReply(
+                    $this->comment,
+                    $aiConversation->ai_response,
+                    is_array($response) ? $response : []
+                );
+            }
+
             if ($this->comment->platform === 'youtube') {
                 $this->storeYouTubeOutboundReply(
+                    $this->comment,
+                    $aiConversation->ai_response,
+                    is_array($response) ? $response : []
+                );
+            }
+
+            if ($this->comment->platform === 'linkedin') {
+                $this->storeLinkedInOutboundReply(
                     $this->comment,
                     $aiConversation->ai_response,
                     is_array($response) ? $response : []
@@ -104,12 +120,10 @@ class PublishAutoReply implements ShouldQueue
             Log::error("Publish Reply Error: " . $e->getMessage());
 
             // Update error status
-            if ($this->comment->aiConversation()) {
-                $this->comment->aiConversation()->update([
-                    'send_status' => 'failed',
-                    'send_error_message' => $e->getMessage(),
-                ]);
-            }
+            $this->comment->aiConversation()->update([
+                'send_status' => 'failed',
+                'send_error_message' => $e->getMessage(),
+            ]);
 
             $this->fail($e);
         }
@@ -137,6 +151,7 @@ class PublishAutoReply implements ShouldQueue
                 'platform_comment_id' => $replyId,
             ],
             [
+                'organization_id' => $parentComment->organization_id,
                 'social_account_id' => $parentComment->social_account_id,
                 'social_post_id' => $parentComment->social_post_id,
 
@@ -146,7 +161,7 @@ class PublishAutoReply implements ShouldQueue
                 'platform_parent_id' => $parentComment->platform_comment_id,
                 'platform_root_id' => $platformRootId,
 
-                'author_name' => $parentComment->socialAccount->name ?? 'Page',
+                'author_name' => $parentComment->socialAccount->platform_account_name ?? 'Page',
                 'platform_author_id' => $parentComment->socialAccount->platform_account_id,
 
                 'content' => $message,
@@ -197,9 +212,60 @@ class PublishAutoReply implements ShouldQueue
                 'platform_parent_id' => $parentComment->platform_comment_id,
                 'platform_root_id' => $platformRootId,
 
-                'author_name' => $parentComment->socialAccount->name ?? 'Instagram Account',
-                'platform_author_id' => data_get($parentComment->socialAccount->metadata, 'connected_instagram_account_id')
+                'author_name' => $parentComment->socialAccount->platform_account_name ?? 'Instagram Account',
+                'platform_author_id' => data_get($parentComment->socialAccount->metadata, 'instagram_id')
                     ?? $parentComment->socialAccount->platform_account_id,
+
+                'content' => $message,
+                'direction' => 'outbound',
+                'sender_type' => 'ai',
+                'is_own_comment' => true,
+
+                'raw_payload' => $response,
+                'commented_at' => now(),
+                'status' => 'sent',
+            ]
+        );
+
+        $parentComment->increment('reply_count');
+
+        SocialComment::where('id', $rootId)->increment('reply_count');
+    }
+
+    private function storeTwitterOutboundReply(SocialComment $parentComment, string $message, array $response): void
+    {
+        $replyId = $response['data']['id'] ?? $response['id'] ?? null;
+
+        if (!$replyId) {
+            Log::warning('X reply id missing, outbound tweet not stored', [
+                'response' => $response,
+                'parent_comment_id' => $parentComment->id,
+            ]);
+
+            return;
+        }
+
+        $rootId = $parentComment->root_id ?: $parentComment->id;
+        $platformRootId = $parentComment->platform_root_id ?: $parentComment->platform_comment_id;
+
+        SocialComment::updateOrCreate(
+            [
+                'platform' => 'twitter',
+                'platform_comment_id' => $replyId,
+            ],
+            [
+                'organization_id' => $parentComment->organization_id,
+                'social_account_id' => $parentComment->social_account_id,
+                'social_post_id' => $parentComment->social_post_id,
+
+                'parent_id' => $parentComment->id,
+                'root_id' => $rootId,
+
+                'platform_parent_id' => $parentComment->platform_comment_id,
+                'platform_root_id' => $platformRootId,
+
+                'author_name' => $parentComment->socialAccount->platform_account_name ?? 'X Account',
+                'platform_author_id' => $parentComment->socialAccount->platform_account_id,
 
                 'content' => $message,
                 'direction' => 'outbound',
@@ -249,7 +315,59 @@ class PublishAutoReply implements ShouldQueue
                 'platform_parent_id' => $parentComment->platform_comment_id,
                 'platform_root_id' => $platformRootId,
 
-                'author_name' => $parentComment->socialAccount->name ?? 'YouTube Channel',
+                'author_name' => $parentComment->socialAccount->platform_account_name ?? 'YouTube Channel',
+                'platform_author_id' => $parentComment->socialAccount->platform_account_id,
+
+                'content' => $message,
+                'direction' => 'outbound',
+                'sender_type' => 'ai',
+                'is_own_comment' => true,
+
+                'raw_payload' => $response,
+                'commented_at' => now(),
+                'status' => 'sent',
+            ]
+        );
+
+        $parentComment->increment('reply_count');
+
+        SocialComment::where('id', $rootId)->increment('reply_count');
+    }
+
+    private function storeLinkedInOutboundReply(SocialComment $parentComment, string $message, array $response): void
+    {
+        // LinkedIn replies return the URN as the response entity
+        $replyId = $response['id'] ?? $response['entityId'] ?? null;
+
+        if (!$replyId) {
+            Log::warning('LinkedIn reply id missing, outbound comment not stored', [
+                'response' => $response,
+                'parent_comment_id' => $parentComment->id,
+            ]);
+
+            return;
+        }
+
+        $rootId = $parentComment->root_id ?: $parentComment->id;
+        $platformRootId = $parentComment->platform_root_id ?: $parentComment->platform_comment_id;
+
+        SocialComment::updateOrCreate(
+            [
+                'platform' => 'linkedin',
+                'platform_comment_id' => $replyId,
+            ],
+            [
+                'organization_id' => $parentComment->organization_id,
+                'social_account_id' => $parentComment->social_account_id,
+                'social_post_id' => $parentComment->social_post_id,
+
+                'parent_id' => $parentComment->id,
+                'root_id' => $rootId,
+
+                'platform_parent_id' => $parentComment->platform_comment_id,
+                'platform_root_id' => $platformRootId,
+
+                'author_name' => $parentComment->socialAccount->platform_account_name ?? 'LinkedIn Organization',
                 'platform_author_id' => $parentComment->socialAccount->platform_account_id,
 
                 'content' => $message,

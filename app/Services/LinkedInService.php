@@ -187,9 +187,9 @@ class LinkedInService
                         'content' => $message,
                         'commented_at' => isset($comment['createdAt'])
                             ? \Carbon\Carbon::createFromTimestampMs($comment['createdAt'])
-                                ->setTimezone('Asia/Kolkata')
+                                ->setTimezone(config('app.timezone'))
                                 ->format('Y-m-d H:i:s')
-                            : now()->setTimezone('Asia/Kolkata')->format('Y-m-d H:i:s'),
+                            : now()->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s'),
 
                         'status' => 'new',
                     ]

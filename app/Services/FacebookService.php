@@ -4,7 +4,6 @@
 
 namespace App\Services;
 
-use App\Jobs\AnalyzeCommentWithAI;
 use App\Jobs\AnalyzeWithOllama;
 use App\Models\SocialAccount;
 use App\Models\SocialComment;
@@ -18,7 +17,7 @@ class FacebookService
 
     public function __construct()
     {
-        $this->graphVersion = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
+        $this->graphVersion = env('FACEBOOK_GRAPH_VERSION', 'v25.0');
     }
 
     /**
@@ -259,6 +258,7 @@ class FacebookService
                 'platform' => 'facebook',
             ],
             [
+                'organization_id' => $account->organization_id,
                 'social_account_id' => $account->id,
                 'social_post_id' => $storedPost->id,
 
@@ -278,8 +278,8 @@ class FacebookService
 
                 'raw_payload' => $value,
                 'commented_at' => isset($value['created_time'])
-                    ? \Carbon\Carbon::parse($value['created_time'])->setTimezone('Asia/Kolkata')
-                    : now()->setTimezone('Asia/Kolkata'),
+                    ? \Carbon\Carbon::parse($value['created_time'])->setTimezone(config('app.timezone'))
+                    : now()->setTimezone(config('app.timezone')),
 
             ]
         );
@@ -384,10 +384,9 @@ class FacebookService
                 'is_own_comment' => $isOwnComment,
 
                 'raw_payload' => $comment,
-                'commented_at' => isset($value['created_time'])
-                    ? \Carbon\Carbon::parse($value['created_time'])->setTimezone('Asia/Kolkata')
-                    : now()->setTimezone('Asia/Kolkata'),
-
+                'commented_at' => isset($comment['created_time'])
+                    ? \Carbon\Carbon::parse($comment['created_time'])->setTimezone(config('app.timezone'))
+                    : now()->setTimezone(config('app.timezone')),
 
                 'status' => $isOwnComment ? 'sent' : 'new',
             ]

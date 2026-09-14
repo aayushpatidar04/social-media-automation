@@ -18,7 +18,7 @@ class OllamaService
     {
         $this->ollamaUrl = env('OLLAMA_URL', 'http://localhost:11434');
         $this->model = env('OLLAMA_MODEL', 'gemma2:2b');
-        $this->timeout = 60;
+        $this->timeout = (int) env('OLLAMA_TIMEOUT', 120);
     }
 
     /**

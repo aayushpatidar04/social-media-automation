@@ -317,8 +317,8 @@ class YoutubeService
                 'raw_payload' => $comment,
 
                 'commented_at' => isset($snippet['publishedAt'])
-                    ? \Carbon\Carbon::parse($snippet['publishedAt'])->setTimezone('Asia/Kolkata')
-                    : now()->setTimezone('Asia/Kolkata'),
+                    ? \Carbon\Carbon::parse($snippet['publishedAt'])->setTimezone(config('app.timezone'))
+                    : now()->setTimezone(config('app.timezone')),
 
                 'status' => $isOwnComment ? 'sent' : 'new',
             ]

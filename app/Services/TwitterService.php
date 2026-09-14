@@ -231,10 +231,10 @@ class TwitterService
         return $data;
     }
 
-    public function publishReply(SocialComment $comment, string $message, SocialAccount $account): bool
+    public function publishReply(SocialComment $comment, string $message, SocialAccount $account): array
     {
         try {
-            $this->replyToTweet($account, $comment->platform_comment_id, $message);
+            $data = $this->replyToTweet($account, $comment->platform_comment_id, $message);
 
             $comment->update([
                 'status' => 'replied',
@@ -242,10 +242,13 @@ class TwitterService
                 'replied_at' => now(),
             ]);
 
-            return true;
+            return $data;
         } catch (\Exception $e) {
             Log::error('Twitter publish reply exception: ' . $e->getMessage());
-            return false;
+            return [
+                'error' => true,
+                'message' => $e->getMessage(),
+            ];
         }
     }
 

@@ -17,7 +17,7 @@ class FacebookAuthController extends Controller
 
     public function __construct()
     {
-        $this->graphVersion = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
+        $this->graphVersion = env('FACEBOOK_GRAPH_VERSION', 'v25.0');
     }
     
     /**
@@ -38,7 +38,7 @@ class FacebookAuthController extends Controller
         // Store state in session for validation
         session(['facebook_oauth_state' => $state]);
 
-        $url = "https://www.facebook.com/v18.0/dialog/oauth?" .
+        $url = "https://www.facebook.com/v25.0/dialog/oauth?" .
             "client_id={$appId}" .
             "&redirect_uri=" . urlencode($redirectUri) .
             "&scope={$scope}" .
@@ -173,7 +173,7 @@ class FacebookAuthController extends Controller
         $appId = env('FACEBOOK_APP_ID');
         $appSecret = env('FACEBOOK_APP_SECRET');
         $redirectUri = env('FACEBOOK_REDIRECT_URI');
-        $version = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
+        $version = env('FACEBOOK_GRAPH_VERSION', 'v25.0');
 
         $url = "https://graph.facebook.com/{$version}/oauth/access_token?" .
             "client_id={$appId}" .
@@ -190,7 +190,7 @@ class FacebookAuthController extends Controller
      */
     private function getUserPages(string $accessToken): array
     {
-        $version = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
+        $version = env('FACEBOOK_GRAPH_VERSION', 'v25.0');
 
         $url = "https://graph.facebook.com/{$version}/me/accounts?" .
             "fields=id,name,picture,access_token&" .
@@ -244,7 +244,7 @@ class FacebookAuthController extends Controller
         }
 
         try {
-            $version = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
+            $version = env('FACEBOOK_GRAPH_VERSION', 'v25.0');
             $url = "https://graph.facebook.com/{$version}/me?fields=id,name,email&access_token={$token}";
 
             $response = Http::get($url);

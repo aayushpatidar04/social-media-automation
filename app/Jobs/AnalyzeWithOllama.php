@@ -17,7 +17,7 @@ class AnalyzeWithOllama implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $timeout = 120;  // Ollama might be slower than API
+    public $timeout = 120; // Ollama might be slower than API
     public $tries = 2;
     public $maxExceptions = 2;
 
@@ -31,14 +31,14 @@ class AnalyzeWithOllama implements ShouldQueue
     public function handle()
     {
         try {
-            Log::info('🤖 Starting AI analysis for comment: ' . $this->comment->id);
+            Log::info('Starting AI analysis for comment: ' . $this->comment->id);
 
             $service = new OllamaService();
 
             // Check if Ollama is available
             if (!$service->isAvailable()) {
-                Log::error('❌ Ollama service not available at ' . env('OLLAMA_URL', 'http://localhost:11434'));
-                Log::warning('⚠️  AI analysis skipped - Ollama not running');
+                Log::error('Ollama service not available at ' . env('OLLAMA_URL', 'http://localhost:11434'));
+                Log::warning('AI analysis skipped - Ollama not running');
                 $this->comment->update([
                     'ai_analysis_failed' => true,
                     'ai_error_message' => 'Ollama service not available',
@@ -47,6 +47,7 @@ class AnalyzeWithOllama implements ShouldQueue
                 return;
             }
 
+            // Build a unified prompt with conversation context
             $conversationHistory = $this->buildConversationHistory($this->comment);
 
             $analysisText = "
@@ -56,7 +57,8 @@ class AnalyzeWithOllama implements ShouldQueue
                 Current Customer Message:
                 {$this->comment->content}
                 ";
-;
+
+            // Run the 3 analysis calls (sentiment, intent, lead)
             $sentimentAnalysis = $service->analyzeSentiment($analysisText);
             $intentAnalysis = $service->classifyIntent($analysisText);
             $leadAnalysis = $service->detectLead($analysisText);
@@ -71,7 +73,7 @@ class AnalyzeWithOllama implements ShouldQueue
                 'lead_score' => $leadAnalysis['lead_score'],
             ];
 
-            Log::info('✅ Analysis complete', $analysis);
+            Log::info('Analysis complete', $analysis);
 
             // Update comment with analysis results
             $this->comment->update([
@@ -86,13 +88,18 @@ class AnalyzeWithOllama implements ShouldQueue
                 'ai_analysis_completed_at' => now(),
             ]);
 
-            Log::info('✅ Comment updated with analysis: ' . $this->comment->id);
+            Log::info('Comment updated with analysis: ' . $this->comment->id);
 
-            // If it's a potential lead or support request, generate AI response
-            Log::info('🤖 Generating AI response...');
-            GenerateOllamaResponse::dispatch($this->comment);
+            // If it's a potential lead or support request, mark for priority handling
             if ($analysis['is_lead'] || $analysis['intent'] === 'sales' || $analysis['intent'] === 'support') {
+                Log::info('Priority comment detected - lead/sales/support', [
+                    'comment_id' => $this->comment->id,
+                    'analysis' => $analysis,
+                ]);
             }
+
+            // Always generate AI response for the comment
+            GenerateOllamaResponse::dispatch($this->comment);
 
             // Broadcast update
             try {
@@ -102,7 +109,7 @@ class AnalyzeWithOllama implements ShouldQueue
             }
 
         } catch (\Exception $e) {
-            Log::error('❌ AI analysis failed for comment: ' . $this->comment->id);
+            Log::error('AI analysis failed for comment: ' . $this->comment->id);
             Log::error('Error: ' . $e->getMessage());
             Log::error('Trace: ' . $e->getTraceAsString());
 
@@ -120,7 +127,7 @@ class AnalyzeWithOllama implements ShouldQueue
 
     public function failed(\Exception $exception)
     {
-        Log::error('🔴 AI analysis job permanently failed for comment: ' . $this->comment->id);
+        Log::error('AI analysis job permanently failed for comment: ' . $this->comment->id);
         Log::error('Reason: ' . $exception->getMessage());
 
         $this->comment->update([

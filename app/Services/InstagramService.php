@@ -1,10 +1,9 @@
 <?php
 
-// app/Services/FacebookService.php - COMPLETE VERSION
+// app/Services/InstagramService.php
 
 namespace App\Services;
 
-use App\Jobs\AnalyzeCommentWithAI;
 use App\Jobs\AnalyzeWithOllama;
 use App\Models\SocialAccount;
 use App\Models\SocialComment;
@@ -323,8 +322,8 @@ class InstagramService
                 'raw_payload' => $comment,
 
                 'commented_at' => isset($comment['timestamp'])
-                    ? \Carbon\Carbon::parse($comment['timestamp'])->setTimezone('Asia/Kolkata')
-                    : now()->setTimezone('Asia/Kolkata'),
+                    ? \Carbon\Carbon::parse($comment['timestamp'])->setTimezone(config('app.timezone'))
+                    : now()->setTimezone(config('app.timezone')),
 
             ]
         );
@@ -456,8 +455,8 @@ class InstagramService
 
                 'raw_payload' => $comment,
                 'commented_at' => isset($comment['timestamp'])
-                    ? \Carbon\Carbon::parse($comment['timestamp'])->setTimezone('Asia/Kolkata')
-                    : now()->setTimezone('Asia/Kolkata'),
+                    ? \Carbon\Carbon::parse($comment['timestamp'])->setTimezone(config('app.timezone'))
+                    : now()->setTimezone(config('app.timezone')),
 
                 'status' => $isOwnComment ? 'sent' : 'new',
             ]
@@ -494,7 +493,7 @@ class InstagramService
             return false;
         }
 
-        if (!$account->initial_sync_completed_at) {
+        if (!$account->auto_reply_started_at) {
             return false;
         }
 
@@ -503,7 +502,7 @@ class InstagramService
         }
 
         return $comment->commented_at->gte(
-            $account->initial_sync_completed_at
+            $account->auto_reply_started_at
         );
     }
 }

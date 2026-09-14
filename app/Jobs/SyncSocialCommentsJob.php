@@ -22,7 +22,8 @@ class SyncSocialCommentsJob implements ShouldQueue
 
     public function __construct(
         public int $accountId
-    ) {}
+    ) {
+    }
 
     public function handle(
         YoutubeService $youTubeService,
@@ -37,8 +38,8 @@ class SyncSocialCommentsJob implements ShouldQueue
 
         match ($account->platform) {
             'youtube' => $youTubeService->syncComments($account),
-            // 'twitter' => $twitterService->syncComments($account),
-            // 'linkedin' => $linkedInService->syncComments($account),
+            'twitter' => $twitterService->syncComments($account),
+            'linkedin' => $linkedInService->syncComments($account),
             default => null,
         };
     }

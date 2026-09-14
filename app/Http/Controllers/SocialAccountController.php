@@ -7,6 +7,9 @@ namespace App\Http\Controllers;
 use App\Models\SocialAccount;
 use App\Jobs\SyncFacebookComments;
 use App\Jobs\SyncInstagramComments;
+use App\Jobs\SyncYoutubeComments;
+use App\Jobs\SyncTwitterComments;
+use App\Jobs\SyncLinkedInComments;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
@@ -18,7 +21,7 @@ class SocialAccountController extends Controller
     public function index()
     {
         $organization = Auth::user()->organization;
-        
+
         $accounts = $organization->socialAccounts()
             ->with('user')
             ->latest()
@@ -42,11 +45,17 @@ class SocialAccountController extends Controller
         }
 
         try {
-            Log::info('Starting sync for account: ' . $account->platform_account_name);
+            Log::info('Starting sync for account: ' . $account->platform_account_name . ' (' . $account->platform . ')');
 
-            // Dispatch sync job
-            SyncFacebookComments::dispatch($account);
-            SyncInstagramComments::dispatch($account);
+            // Dispatch platform-specific sync job
+            match ($account->platform) {
+                'facebook' => SyncFacebookComments::dispatch($account),
+                'instagram' => SyncInstagramComments::dispatch($account),
+                'youtube' => SyncYoutubeComments::dispatch($account),
+                'twitter' => SyncTwitterComments::dispatch($account),
+                'linkedin' => SyncLinkedInComments::dispatch($account),
+                default => Log::warning('No sync job for platform: ' . $account->platform),
+            };
 
             return response()->json([
                 'message' => 'Sync started! Comments will be updated shortly.',
@@ -125,29 +134,110 @@ class SocialAccountController extends Controller
         }
 
         try {
-            // Try to fetch one post to verify token
-            $version = env('FACEBOOK_GRAPH_VERSION', 'v18.0');
-            $url = "https://graph.facebook.com/{$version}/" . $account->platform_account_id . "/posts?limit=1&access_token=" . $account->access_token;
-            
-            $response = Http::get($url);
-            $data = $response->json();
+            $result = match ($account->platform) {
+                'facebook', 'instagram' => $this->testFacebookConnection($account),
+                'youtube' => $this->testYoutubeConnection($account),
+                'twitter' => $this->testTwitterConnection($account),
+                'linkedin' => $this->testLinkedInConnection($account),
+                default => ['status' => 'error', 'message' => 'Unknown platform'],
+            };
 
-            if (isset($data['error'])) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => $data['error']['message'],
-                ], 400);
-            }
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Account is connected and working',
-            ]);
+            return response()->json($result);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function testFacebookConnection(SocialAccount $account): array
+    {
+        $version = env('FACEBOOK_GRAPH_VERSION', 'v25.0');
+        $url = "https://graph.facebook.com/{$version}/" . $account->platform_account_id . "/posts?limit=1&access_token=" . $account->access_token;
+
+        $response = Http::get($url);
+        $data = $response->json();
+
+        if (isset($data['error'])) {
+            return [
+                'status' => 'error',
+                'message' => $data['error']['message'],
+            ];
+        }
+
+        return [
+            'status' => 'success',
+            'message' => 'Account is connected and working',
+        ];
+    }
+
+    private function testYoutubeConnection(SocialAccount $account): array
+    {
+        $response = Http::withToken($account->access_token)
+            ->get('https://www.googleapis.com/youtube/v3/channels', [
+                'part' => 'snippet',
+                'mine' => 'true',
+            ]);
+
+        $data = $response->json();
+
+        if (!$response->successful() || isset($data['error'])) {
+            return [
+                'status' => 'error',
+                'message' => $data['error']['message'] ?? 'YouTube connection failed',
+            ];
+        }
+
+        return [
+            'status' => 'success',
+            'message' => 'YouTube channel is connected',
+        ];
+    }
+
+    private function testTwitterConnection(SocialAccount $account): array
+    {
+        $response = Http::withToken($account->access_token)
+            ->get('https://api.x.com/2/users/me', [
+                'user.fields' => 'id,name,username',
+            ]);
+
+        $data = $response->json();
+
+        if (!$response->successful() || isset($data['detail'])) {
+            return [
+                'status' => 'error',
+                'message' => $data['detail'] ?? 'X connection failed',
+            ];
+        }
+
+        return [
+            'status' => 'success',
+            'message' => 'X account is connected',
+        ];
+    }
+
+    private function testLinkedInConnection(SocialAccount $account): array
+    {
+        $response = Http::withToken($account->access_token)
+            ->withHeaders([
+                'LinkedIn-Version' => '202405',
+                'X-Restli-Protocol-Version' => '2.0.0',
+            ])
+            ->get('https://api.linkedin.com/v2/userinfo');
+
+        $data = $response->json();
+
+        if (!$response->successful() || isset($data['message'])) {
+            return [
+                'status' => 'error',
+                'message' => $data['message'] ?? 'LinkedIn connection failed',
+            ];
+        }
+
+        return [
+            'status' => 'success',
+            'message' => 'LinkedIn account is connected',
+        ];
     }
 }

@@ -127,7 +127,7 @@ class ProcessMetaWebhook implements ShouldQueue
             $pageId = $account->platform_account_id;
             $pageToken = $account->access_token;
 
-            $response = Http::get("https://graph.facebook.com/v18.0/{$pageId}", [
+            $response = Http::get("https://graph.facebook.com/v25.0/{$pageId}", [
                 'fields' => 'connected_instagram_account',
                 'access_token' => $pageToken,
             ]);
