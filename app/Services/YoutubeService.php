@@ -144,7 +144,6 @@ class YoutubeService
         $commentedAt = data_get($snippet, 'publishedAt', now()->toIso8601String());
 
         $parentId = data_get($thread, 'snippet.parentId');
-        $rootId = $parentId ?: $commentId;
 
         $parentComment = null;
         if ($parentId) {
@@ -152,6 +151,8 @@ class YoutubeService
                 ->where('platform_comment_id', $parentId)
                 ->first();
         }
+
+        $rootId = $parentComment?->id;
 
         SocialComment::create([
             'organization_id' => $account->organization_id,
@@ -345,15 +346,16 @@ class YoutubeService
             }
 
             $vStatus = $videoStatusMap[$videoId] ?? null;
+            \Log::info($vStatus);
 
             // If status is missing entirely, skip — it's a restricted/age-gated/kids video
-            if (!$vStatus) {
-                Log::info('YouTube PubSubHubbub: skipping video with unavailable status', [
-                    'video_id' => $videoId,
-                ]);
-                $skipped++;
-                continue;
-            }
+            // if (!$vStatus) {
+            //     Log::info('YouTube PubSubHubbub: skipping video with unavailable status', [
+            //         'video_id' => $videoId,
+            //     ]);
+            //     $skipped++;
+            //     continue;
+            // }
 
             if (($vStatus['privacyStatus'] ?? 'public') !== 'public') {
                 $skipped++;
