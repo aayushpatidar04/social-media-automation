@@ -627,4 +627,42 @@ class YoutubeService
         // Reply to ALL comments since auto_reply was turned on
         return $comment->commented_at->gte($account->auto_reply_started_at);
     }
+
+    public function publishReply(SocialComment $comment, string $message, SocialAccount $account): array
+{
+ $accessToken = $this->validToken($account);
+
+  // YouTube replies go to the parent comment thread
+ $parentId = $comment->platform_parent_id ?: $comment->platform_comment_id;
+
+ $response = Http::withToken($accessToken)->post(
+ "{$this->baseUrl}/comments?part=snippet",
+  [
+ 'snippet' => [
+ 'parentId' => $parentId,
+ 'textOriginal' => $message,
+ ],
+  ]
+ );
+
+  if (!$response->successful()) {
+ Log::error('YouTube reply publish failed', [
+ 'comment_id' => $comment->id,
+  'parent_id' => $parentId,
+  'status' => $response->status(),
+ 'body' => $response->body(),
+  ]);
+
+ throw new \Exception(
+ $response->json('error.message') ?? 'YouTube reply failed'
+ );
+  }
+
+ $replyData = $response->json('snippet', []);
+
+ return [
+ 'id' => $response->json('id'),
+ 'url' => null,
+  ];
+}
 }

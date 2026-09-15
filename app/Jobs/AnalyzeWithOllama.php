@@ -117,7 +117,7 @@ class AnalyzeWithOllama implements ShouldQueue
         Lead::create([
             'organization_id' => $this->comment->socialAccount->organization_id,
             'social_comment_id' => $this->comment->id,
-            'platform_author_id' => $this->comment->author_id,
+            'platform_author_id' => $this->comment->platform_author_id ?? 'unknown_' . $this->comment->platform_comment_id,
             'author_name' => $this->comment->author_name,
             'author_profile_url' => $this->comment->author_avatar_url,
             'initial_message' => substr($this->comment->content, 0, 500),
