@@ -123,18 +123,18 @@ class YoutubeService
         }
 
         $totalNew = 0;
+        $isFullSync = $commentWindowDays <= 0;
 
-        // 0 = full sync → fetch everything, so disable sinceId pagination
-        // (otherwise old comments already past the cursor never come back)
-        $sinceId = $commentWindowDays > 0
-            ? ($account->metadata['last_synced_comment_id'] ?? null)
-            : null;
+        // Full sync → fetch everything, so disable sinceId cursor
+        $sinceId = $isFullSync
+            ? null
+            : ($account->metadata['last_synced_comment_id'] ?? null);
 
         $threads = $this->getCommentThreads($accessToken, $videoId, $sinceId, $commentWindowDays);
 
         foreach ($threads as $thread) {
             $topLevelCommentId = data_get($thread, 'id');
-            $totalNew += $this->processCommentThread($account, $storedPost, $thread, $topLevelCommentId);
+            $totalNew += $this->processCommentThread($account, $storedPost, $thread, $topLevelCommentId, $isFullSync);
 
             if ($topLevelCommentId) {
                 $account->update([
@@ -527,54 +527,62 @@ class YoutubeService
 
     private function getCommentThreads(string $accessToken, string $videoId, ?string $sinceId = null, int $windowDays = 1): array
     {
-        // Always use recent-first order so we can stop early when we hit the cutoff
-        $response = Http::withToken($accessToken)->get("{$this->baseUrl}/commentThreads", [
-            'part' => 'snippet',
-            'videoId' => $videoId,
-            'maxResults' => 50,
-            'order' => 'time',
-            'textFormat' => 'plainText',
-        ]);
+        // 0 (or negative) = full sync → no date cutoff
+        $cutoff = $windowDays > 0 ? now()->subDays($windowDays) : null;
+        $pageToken = null;
+        $threads = [];
 
-        if (!$response->successful()) {
-            $reason = $response->json('error.errors.0.reason');
+        do {
+            $params = [
+                'part' => 'snippet,replies', // replies: so processCommentThread can store them
+                'videoId' => $videoId,
+                'maxResults' => 50,
+                'order' => 'time',
+                'textFormat' => 'plainText',
+            ];
 
-            if (in_array($reason, ['commentsDisabled', 'videoNotFound'])) {
+            if ($pageToken) {
+                $params['pageToken'] = $pageToken;
+            }
+
+            $response = Http::withToken($accessToken)->get("{$this->baseUrl}/commentThreads", $params);
+
+            if (!$response->successful()) {
+                $reason = $response->json('error.errors.0.reason');
+
+                if (in_array($reason, ['commentsDisabled', 'videoNotFound'])) {
+                    return [];
+                }
+
+                Log::warning('YouTube commentThreads fetch failed', [
+                    'video_id' => $videoId,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
                 return [];
             }
 
-            return [];
-        }
+            foreach ($response->json('items') ?? [] as $thread) {
+                $publishedAt = data_get($thread, 'snippet.topLevelComment.snippet.publishedAt');
 
-        $cutoff = now()->subDays($windowDays);
-
-        $threads = $response->json('items') ?? [];
-
-        // Filter out comments older than the window — they already exist in DB
-        $threads = array_filter($threads, function ($thread) use ($cutoff) {
-            $publishedAt = data_get($thread, 'snippet.topLevelComment.snippet.publishedAt');
-            return $publishedAt && Carbon::parse($publishedAt)->gte($cutoff);
-        });
-
-        if ($sinceId) {
-            $filtered = [];
-            $foundSince = false;
-
-            foreach ($threads as $thread) {
-                $threadId = data_get($thread, 'id');
-
-                if ($threadId === $sinceId) {
-                    $foundSince = true;
-                    break;
+                // Skip only when a window is configured AND comment is older than cutoff
+                if ($cutoff && $publishedAt && Carbon::parse($publishedAt)->lt($cutoff)) {
+                    continue;
                 }
 
-                $filtered[] = $thread;
+                $threadId = data_get($thread, 'id');
+
+                // sinceId acts as a per-video cursor — stop when we reach it
+                if ($sinceId && $threadId === $sinceId) {
+                    return $threads;
+                }
+
+                $threads[] = $thread;
             }
 
-            if ($foundSince) {
-                return $filtered;
-            }
-        }
+            $pageToken = $response->json('nextPageToken');
+        } while ($pageToken);
 
         return $threads;
     }
