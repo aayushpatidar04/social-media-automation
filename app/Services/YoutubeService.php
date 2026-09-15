@@ -57,12 +57,11 @@ class YoutubeService
         $accessToken = $this->validToken($account);
         $videos = $this->getVideos($account, $accessToken);
 
-        $postWindowDays = $options['post_window_days'] ?? 30;
         $commentWindowDays = $options['comment_window_days'] ?? 7;
+        $isFullSync = $options['full_sync'] ?? false;
 
-        $postCutoff = $postWindowDays > 0 ? now()->subDays($postWindowDays) : null;
+        // NEVER skip posts by age — a fresh comment on an old post must be caught
         $totalNew = 0;
-        $skippedOldPosts = 0;
 
         foreach ($videos as $video) {
             $videoId = $video['id']['videoId']
@@ -73,22 +72,13 @@ class YoutubeService
                 continue;
             }
 
-            // Skip videos older than the post window — they exist in DB, no recheck needed
-            if ($postCutoff) {
-                $publishedAt = data_get($video, 'snippet.publishedAt');
-                if ($publishedAt && Carbon::parse($publishedAt)->lt($postCutoff)) {
-                    $skippedOldPosts++;
-                    continue;
-                }
-            }
-
-            $totalNew += $this->syncNewCommentsForVideo($account, $videoId, $accessToken, $commentWindowDays);
+            $totalNew += $this->syncNewCommentsForVideo($account, $videoId, $accessToken, $commentWindowDays, $isFullSync);
         }
 
         Log::info('YouTube sync', [
             'account_id' => $account->id,
             'new_comments' => $totalNew,
-            'skipped_old_posts' => $skippedOldPosts,
+            'videos_checked' => count($videos),
         ]);
 
         $account->update(['last_synced_at' => now()]);
@@ -96,7 +86,7 @@ class YoutubeService
         return $totalNew;
     }
 
-    public function syncNewCommentsForVideo(SocialAccount $account, string $videoId, ?string $accessToken = null, int $commentWindowDays = 1): int
+    public function syncNewCommentsForVideo(SocialAccount $account, string $videoId, ?string $accessToken = null, int $commentWindowDays = 7, bool $isFullSync = false): int
     {
         $accessToken = $accessToken ?: $this->validToken($account);
 
@@ -123,20 +113,19 @@ class YoutubeService
         }
 
         $totalNew = 0;
-        $isFullSync = $commentWindowDays <= 0;
 
-        // Full sync → fetch everything, so disable sinceId cursor
+        // Full sync = no cursor, fetch everything. Normal sync = use sinceId.
         $sinceId = $isFullSync
             ? null
             : ($account->metadata['last_synced_comment_id'] ?? null);
 
-        $threads = $this->getCommentThreads($accessToken, $videoId, $sinceId, $commentWindowDays);
+        $threads = $this->getCommentThreads($accessToken, $videoId, $sinceId, $commentWindowDays, $isFullSync);
 
         foreach ($threads as $thread) {
             $topLevelCommentId = data_get($thread, 'id');
             $totalNew += $this->processCommentThread($account, $storedPost, $thread, $topLevelCommentId, $isFullSync);
 
-            if ($topLevelCommentId) {
+            if ($topLevelCommentId && !$isFullSync) {
                 $account->update([
                     'metadata' => array_merge($account->metadata ?? [], [
                         'last_synced_comment_id' => $topLevelCommentId,
@@ -171,8 +160,6 @@ class YoutubeService
                 ->first();
         }
 
-        // updateOrCreate: full sync re-running over old comments won't
-        // create duplicates — it refreshes metadata instead of skipping
         $comment = SocialComment::updateOrCreate(
             [
                 'platform' => 'youtube',
@@ -200,13 +187,10 @@ class YoutubeService
 
         $totalNew = $comment->wasRecentlyCreated ? 1 : 0;
 
-        // Only dispatch AI analysis in normal sync, not full sync
-        if ($comment->wasRecentlyCreated && !$isFullSync && $this->shouldAnalyzeComment($account, $comment)) {
+        if ($comment->wasRecentlyCreated && !$isFullSync) {
             AnalyzeWithOllama::dispatch($comment);
         }
 
-        // Store replies embedded in this thread (commentThreads.list returns
-        // them nested when part=replies is requested) — previously never saved
         foreach (data_get($thread, 'replies.comments', []) as $reply) {
             $replyId = data_get($reply, 'id');
             if (!$replyId) {
@@ -243,7 +227,7 @@ class YoutubeService
             if ($storedReply->wasRecentlyCreated) {
                 $totalNew++;
 
-                if (!$isFullSync && $this->shouldAnalyzeComment($account, $storedReply)) {
+                if (!$isFullSync) {
                     AnalyzeWithOllama::dispatch($storedReply);
                 }
             }
@@ -254,19 +238,15 @@ class YoutubeService
 
     public function getVideos(SocialAccount $account, string $accessToken): array
     {
-        // Cache videos for 12 hours — avoids redundant API calls on every sync
         $cacheKey = "youtube_videos_account_{$account->id}";
 
-        return Cache::remember($cacheKey, now()->addHours(12), function () use ($accessToken) {
+        return Cache::remember($cacheKey, now()->addHours(6), function () use ($accessToken) {
             return $this->fetchVideosFromApi($accessToken);
         });
     }
 
     private function fetchVideosFromApi(string $accessToken): array
     {
-
-        // Use channels.list to get the uploads playlist — costs only 1 quota unit
-        // instead of 100 for /search, which avoids daily quota exhaustion
         $channelResponse = Http::withToken($accessToken)->get("{$this->baseUrl}/channels", [
             'part' => 'contentDetails',
             'mine' => 'true',
@@ -282,11 +262,10 @@ class YoutubeService
         $videos = [];
 
         if ($uploadsPlaylistId) {
-            // Get the 25 most recent uploads via the uploads playlist
             $playlistResponse = Http::withToken($accessToken)->get("{$this->baseUrl}/playlistItems", [
                 'part' => 'contentDetails,snippet',
                 'playlistId' => $uploadsPlaylistId,
-                'maxResults' => 25,
+                'maxResults' => 50,
             ]);
 
             if ($playlistResponse->successful()) {
@@ -294,7 +273,6 @@ class YoutubeService
             }
         }
 
-        // Enrich each video with privacy + comment status from /videos endpoint
         $videoIds = array_filter(array_map(function ($v) {
             return $v['contentDetails']['videoId'] ?? $v['snippet']['resourceId']['videoId'] ?? null;
         }, $videos));
@@ -321,7 +299,6 @@ class YoutubeService
             }
         }
 
-        // Reshape so callers can read videoId the same way as before
         foreach ($videos as &$video) {
             $vid = $video['contentDetails']['videoId'] ?? $video['snippet']['resourceId']['videoId'] ?? null;
             $video['id'] = ['videoId' => $vid];
@@ -384,10 +361,6 @@ class YoutubeService
         ];
     }
 
-    /**
-     * Subscribe to PubSubHubbub for real-time comment notifications.
-     * Skips private/unlisted/deleted videos with comments disabled.
-     */
     public function subscribeToVideoNotifications(SocialAccount $account): array
     {
         $accessToken = $this->validToken($account);
@@ -396,48 +369,38 @@ class YoutubeService
         $webhookUrl = rtrim(config('app.url'), '/') . '/webhooks/youtube';
         $hubUrl = 'https://pubsubhubbub.appspot.com/subscribe';
 
-        // Resolve channel ID — prefer account metadata, fall back to any video's snippet
-        $channelId = $account->metadata['youtube_channel_id'] ?? null;
-
-        if (!$channelId) {
-            foreach ($videos as $video) {
-                $channelId = $video['snippet']['channelId'] ?? null;
-                if ($channelId) {
-                    break;
-                }
-            }
-        }
-
-        if (!$channelId) {
-            Log::warning('YouTube PubSubHubbub: no channel ID found, cannot subscribe', [
-                'account_id' => $account->id,
-            ]);
-            return ['success' => 0, 'failed' => 1, 'skipped' => 0];
-        }
-
-        // Per-video status filtering no longer happens here — YouTube rejects
-        // per-video topics. Filter by video ID in the webhook handler instead.
-        $videoIds = [];
-        foreach ($videos as $video) {
-            $videoId = $video['id']['videoId']
-                ?? $video['snippet']['resourceId']['videoId']
-                ?? null;
-            if ($videoId) {
-                $videoIds[] = $videoId;
-            }
-        }
-
         $success = 0;
         $failed = 0;
         $skipped = 0;
 
-        // Channel-level topic is the only topic third parties may subscribe to
-        $topicUrl = "https://www.youtube.com/xml/feeds/videos.xml?channel_id={$channelId}";
+        foreach ($videos as $video) {
+            $videoId = $video['id']['videoId']
+                ?? $video['snippet']['resourceId']['videoId']
+                ?? null;
 
-        $subscribed = false;
-        $lastBody = '';
+            if (!$videoId) {
+                continue;
+            }
 
-        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            // Pre-filter restricted videos to avoid 403s from the hub
+            $status = data_get($video, '_status');
+            if ($status) {
+                if (($status['privacyStatus'] ?? 'public') !== 'public') {
+                    $skipped++;
+                    continue;
+                }
+                if (($status['commentStatus'] ?? 'allowed') === 'disabled') {
+                    $skipped++;
+                    continue;
+                }
+                if (($status['uploadStatus'] ?? 'processed') !== 'processed') {
+                    $skipped++;
+                    continue;
+                }
+            }
+
+            $topicUrl = "https://www.youtube.com/xml/feeds/videos.xml?video_id={$videoId}";
+
             $response = Http::asForm()->post($hubUrl, [
                 'hub.callback' => $webhookUrl,
                 'hub.topic' => $topicUrl,
@@ -447,60 +410,51 @@ class YoutubeService
             ]);
 
             if ($response->successful() || $response->status() === 204) {
-                $subscribed = true;
-                break;
+                $success++;
+            } elseif ($response->status() === 403 || $response->status() === 400) {
+                // Hub rejected this specific video — skip it gracefully
+                // Causes: age-restricted, kids-content, region-restricted, etc.
+                $skipped++;
+                Log::info('YouTube PubSubHubbub: video skipped (hub rejected)', [
+                    'video_id' => $videoId,
+                    'status' => $response->status(),
+                ]);
+            } else {
+                $failed++;
+                Log::warning('YouTube PubSubHubbub subscription failed', [
+                    'video_id' => $videoId,
+                    'status' => $response->status(),
+                    'body' => substr($response->body(), 0, 500),
+                ]);
             }
-
-            $lastBody = $response->body();
-
-            Log::warning('YouTube PubSubHubbub attempt failed, retrying', [
-                'account_id' => $account->id,
-                'channel_id' => $channelId,
-                'attempt' => $attempt,
-                'status' => $response->status(),
-                'body' => $lastBody,
-            ]);
-
-            // Hub asks for 2^attempt seconds; don't hammer it
-            sleep((int) pow(2, $attempt)); // 2s, 4s, 8s
-        }
-
-        if ($subscribed) {
-            $success = 1;
-        } else {
-            $failed = 1;
-            Log::warning('YouTube PubSubHubbub channel subscription failed after retries', [
-                'account_id' => $account->id,
-                'channel_id' => $channelId,
-                'body' => $lastBody,
-            ]);
         }
 
         $metadata = $account->metadata ?? [];
-        $metadata['youtube_channel_id'] = $channelId;
+        $videoIds = [];
+        foreach ($videos as $video) {
+            $vid = $video['id']['videoId'] ?? $video['snippet']['resourceId']['videoId'] ?? null;
+            if ($vid) {
+                $videoIds[] = $vid;
+            }
+        }
         $metadata['last_video_ids'] = array_slice(
             array_merge($metadata['last_video_ids'] ?? [], $videoIds),
             -50
         );
-        $metadata['pubsub_subscribed'] = $success === 1;
+        $metadata['pubsub_subscribed'] = $success > 0;
         $metadata['pubsub_subscribed_at'] = now()->toIso8601String();
         $account->update(['metadata' => $metadata]);
 
         Log::info('YouTube PubSubHubbub subscription completed', [
             'account_id' => $account->id,
-            'channel_id' => $channelId,
             'subscribed' => $success,
             'failed' => $failed,
             'skipped' => $skipped,
-            'videos_tracked' => count($videoIds),
         ]);
 
         return ['success' => $success, 'failed' => $failed, 'skipped' => $skipped];
     }
 
-    /**
-     * Unsubscribe from video notifications.
-     */
     public function unsubscribeFromVideoNotifications(SocialAccount $account): void
     {
         $videos = $this->getVideos($account, $this->validToken($account));
@@ -547,16 +501,15 @@ class YoutubeService
         return $items[0]['snippet'] ?? ['title' => "Video {$videoId}"];
     }
 
-    private function getCommentThreads(string $accessToken, string $videoId, ?string $sinceId = null, int $windowDays = 1): array
+    private function getCommentThreads(string $accessToken, string $videoId, ?string $sinceId = null, int $windowDays = 7, bool $isFullSync = false): array
     {
-        // 0 (or negative) = full sync → no date cutoff
-        $cutoff = $windowDays > 0 ? now()->subDays($windowDays) : null;
+        $cutoff = (!$isFullSync && $windowDays > 0) ? now()->subDays($windowDays) : null;
         $pageToken = null;
         $threads = [];
 
         do {
             $params = [
-                'part' => 'snippet,replies', // replies: so processCommentThread can store them
+                'part' => 'snippet,replies',
                 'videoId' => $videoId,
                 'maxResults' => 50,
                 'order' => 'time',
@@ -585,17 +538,18 @@ class YoutubeService
                 return [];
             }
 
-            foreach ($response->json('items') ?? [] as $thread) {
+            $items = $response->json('items') ?? [];
+
+            foreach ($items as $thread) {
                 $publishedAt = data_get($thread, 'snippet.topLevelComment.snippet.publishedAt');
 
-                // Skip only when a window is configured AND comment is older than cutoff
                 if ($cutoff && $publishedAt && Carbon::parse($publishedAt)->lt($cutoff)) {
                     continue;
                 }
 
                 $threadId = data_get($thread, 'id');
 
-                // sinceId acts as a per-video cursor — stop when we reach it
+                // Stop at sinceId cursor — already processed this one
                 if ($sinceId && $threadId === $sinceId) {
                     return $threads;
                 }
@@ -640,23 +594,8 @@ class YoutubeService
         return $tokenData['access_token'];
     }
 
-    private function isOwnYouTubeComment(SocialAccount $account, array $comment): bool
+    private function shouldAnalyzeComment(SocialAccount $account, SocialComment $comment): bool
     {
-        $channelId = data_get($account->metadata, 'channel.snippet.channelId');
-
-        if (!$channelId) {
-            return false;
-        }
-
-        $commentAuthorChannelId = data_get($comment, 'snippet.authorChannelId.value');
-
-        return $commentAuthorChannelId === $channelId;
-    }
-
-    private function shouldAnalyzeComment(
-        SocialAccount $account,
-        SocialComment $comment
-    ): bool {
         if (!$comment->wasRecentlyCreated) {
             return false;
         }
@@ -673,8 +612,7 @@ class YoutubeService
             return false;
         }
 
-        return $comment->commented_at->gte(
-            $account->auto_reply_started_at
-        );
+        // Reply to ALL comments since auto_reply was turned on
+        return $comment->commented_at->gte($account->auto_reply_started_at);
     }
 }

@@ -18,35 +18,21 @@ class InstagramService
 
     public function syncComments(SocialAccount $account, array $options = []): int
     {
-        $postWindowDays = $options['post_window_days'] ?? 30;
         $commentWindowDays = $options['comment_window_days'] ?? 7;
         $isFullSync = $options['full_sync'] ?? false;
 
-        // Full sync (window = 0) = no date cutoff
-        if ($isFullSync || $postWindowDays === 0) {
-            $postCutoff = Carbon::createFromTimestamp(0);
-        } else {
-            $postCutoff = now()->subDays($postWindowDays);
-        }
-
-        if ($isFullSync || $commentWindowDays === 0) {
-            $commentCutoff = Carbon::createFromTimestamp(0);
-        } else {
-            $commentCutoff = now()->subDays($commentWindowDays);
-        }
+        // NO post age filter — fetch comments from ALL posts
+        $commentCutoff = ($isFullSync || $commentWindowDays === 0)
+            ? Carbon::createFromTimestamp(0)
+            : now()->subDays($commentWindowDays);
 
         $totalComments = 0;
-        $skippedOldPosts = 0;
 
         $mediaList = $this->getMedia($account);
 
         foreach ($mediaList as $media) {
+            // Store post (no age skip)
             $publishedAt = $media['timestamp'] ?? null;
-            if ($publishedAt && Carbon::parse($publishedAt)->lt($postCutoff)) {
-                $skippedOldPosts++;
-                continue;
-            }
-
             $storedPost = SocialPost::updateOrCreate(
                 [
                     'platform_post_id' => $media['id'],
@@ -67,6 +53,7 @@ class InstagramService
             );
 
             foreach ($comments as $comment) {
+                // Skip only comments older than the comment window
                 $commentedAt = $comment['timestamp'] ?? null;
                 if ($commentedAt && Carbon::parse($commentedAt)->lt($commentCutoff)) {
                     continue;
@@ -117,7 +104,6 @@ class InstagramService
         Log::info('Instagram sync completed', [
             'account_id' => $account->id,
             'total_comments' => $totalComments,
-            'skipped_old_posts' => $skippedOldPosts,
             'full_sync' => $isFullSync,
         ]);
 

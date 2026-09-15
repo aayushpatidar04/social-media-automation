@@ -1,7 +1,5 @@
 <?php
 
-// app/Jobs/GenerateAIResponse.php - USING OLLAMA
-
 namespace App\Jobs;
 
 use App\Models\SocialComment;
@@ -33,43 +31,53 @@ class GenerateOllamaResponse implements ShouldQueue
     public function handle()
     {
         try {
-            Log::info('🤖 Generating AI response for comment: ' . $this->comment->id);
+            Log::info('Generating AI response for comment: ' . $this->comment->id);
 
-            $autoReplyWindow = config('sync.auto_reply_window_days', 1);
+            $account = $this->comment->socialAccount;
 
-            // Skip auto-reply on comments older than the window — they are stale
-            if ($this->comment->commented_at && $this->comment->commented_at->lt(now()->subDays($autoReplyWindow))) {
-                Log::info('Skipping auto-reply for stale comment', [
-                    'comment_id' => $this->comment->id,
+            // Only reply to comments since auto-reply was turned on
+            // This uses auto_reply_started_at (the actual date), NOT a day window
+            // so it correctly handles comments from any time period as long as
+            // they came in after auto-reply was enabled
+            if (!$account || !$account->auto_reply_started_at) {
+                Log::info('Auto-reply not started for this account, skipping');
+                return;
+            }
+
+            if (!$this->comment->commented_at || $this->comment->commented_at->lt($account->auto_reply_started_at)) {
+                Log::info('Comment is before auto-reply started, skipping', [
                     'commented_at' => $this->comment->commented_at,
-                    'window_days' => $autoReplyWindow,
+                    'auto_reply_started_at' => $account->auto_reply_started_at,
                 ]);
+                return;
+            }
+
+            if ($this->comment->is_own_comment) {
+                Log::info('Own comment, skipping AI response');
                 return;
             }
 
             $service = new OllamaService();
 
             $conversationHistory = $this->buildConversationHistory($this->comment);
-            // Build context
+
             $context = [
                 'knowledge' => $this->getRelevantKnowledge($this->comment),
                 'conversation_history' => $conversationHistory,
             ];
 
-            // Generate response
             $response = $service->generateResponse(
                 $this->comment,
                 $context
             );
 
             if (empty($response)) {
-                Log::warning('⚠️  Empty response from AI');
+                Log::warning('Empty response from AI');
                 return;
             }
 
-            Log::info('✅ Generated response: ' . substr($response, 0, 100));
+            Log::info('Generated response: ' . substr($response, 0, 100));
 
-            // Store the AI conversation
             $aiConversation = AiConversation::create([
                 'original_comment' => $this->comment->content,
                 'social_comment_id' => $this->comment->id,
@@ -80,30 +88,24 @@ class GenerateOllamaResponse implements ShouldQueue
                 'model_used' => 'ollama_gemma2',
             ]);
 
-            Log::info('✅ AI conversation stored: ' . $aiConversation->id);
+            Log::info('AI conversation stored: ' . $aiConversation->id);
 
-            // Update comment with the generated response text only.
-            // Actual reply is sent automatically by PublishAutoReply.
             $this->comment->update([
                 'ai_response_text' => $response,
             ]);
 
-            Log::info('✅ Comment updated with AI response text');
+            Log::info('Comment updated with AI response text');
 
-            // Queue the auto-reply publish job immediately.
             PublishAutoReply::dispatch($this->comment);
 
-            Log::info('✅ Auto reply dispatch queued for comment: ' . $this->comment->id);
+            Log::info('Auto reply dispatch queued for comment: ' . $this->comment->id);
 
         } catch (\Exception $e) {
-            Log::error('❌ Error generating response: ' . $e->getMessage());
+            Log::error('Error generating response: ' . $e->getMessage());
             throw $e;
         }
     }
 
-    /**
-     * Get relevant knowledge from knowledge base
-     */
     private function getRelevantKnowledge(SocialComment $comment): string
     {
         $post = $comment->socialPost;

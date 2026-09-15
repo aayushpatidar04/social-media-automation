@@ -4,17 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Jobs\ProcessYoutubeWebhook;
 use App\Models\SocialAccount;
+use App\Services\YoutubeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class YoutubeWebhookController extends Controller
 {
-    /**
-     * YouTube PubSubHubbub hub will POST here when a new comment is posted.
-     * It sends an Atom XML feed in the request body.
-     */
-    public function handle(Request $request)
+    public function handle(Request $request, YoutubeService $youtube)
     {
         // WebSub verification challenge — hub sends this as GET with hub.challenge
         if ($request->isMethod('get') || $request->has('hub_challenge')) {
@@ -22,12 +19,13 @@ class YoutubeWebhookController extends Controller
             Log::info('YouTube PubSubHubbub verification challenge received', [
                 'challenge' => $challenge,
                 'mode' => $request->input('hub_mode'),
+                'topic' => $request->input('hub_topic'),
             ]);
             return response($challenge, 200)
                 ->header('Content-Type', 'text/plain');
         }
 
-        // YouTube sends the Atom feed as raw XML in the request body (POST)
+        // POST — actual notification
         $body = $request->getContent();
 
         if (empty($body)) {
@@ -43,19 +41,20 @@ class YoutubeWebhookController extends Controller
 
             $namespaces = $xml->getNamespaces(true);
             $atomNs = $namespaces['atom'] ?? 'http://www.w3.org/2005/Atom';
-            $ytNs = $namespaces['yt'] ?? 'http://www.youtube.com/xml/schemas/2015';
 
-            // Extract the entry (new comment notification)
             $entry = $xml->children($atomNs)->entry;
             if (!$entry) {
                 Log::info('YouTube webhook: no entry in feed');
                 return response('No entry', 200);
             }
 
-            // Get video ID from the link
-            $links = $entry->children($atomNs)->link;
-            $videoId = null;
+            // Detect feed type: video-level (comments) or channel-level (new uploads)
+            $topic = $request->input('hub_topic') ?? '';
+            $isChannelFeed = str_contains($topic, 'channel_id');
 
+            // Extract video ID from link
+            $videoId = null;
+            $links = $entry->children($atomNs)->link;
             foreach ($links as $link) {
                 $href = (string) $link->attributes()->href;
                 if (preg_match('/v=([a-zA-Z0-9_-]+)/', $href, $matches)) {
@@ -65,16 +64,24 @@ class YoutubeWebhookController extends Controller
             }
 
             if (!$videoId) {
-                Log::warning('YouTube webhook: could not extract video ID');
-                return response('No video ID', 400);
+                Log::warning('YouTube webhook: could not extract video ID', [
+                    'topic' => $topic,
+                ]);
+                return response('No video ID', 200); // 200 so hub doesn't retry
             }
 
-            Log::info('YouTube webhook: new comment notification', [
+            Log::info('YouTube webhook: notification received', [
                 'video_id' => $videoId,
+                'feed_type' => $isChannelFeed ? 'channel' : 'video',
             ]);
 
-            // Dispatch async job to fetch and process the new comment
-            ProcessYoutubeWebhook::dispatch((string) $body, $videoId);
+            if ($isChannelFeed) {
+                // New video uploaded — subscribe to its comment feed and sync
+                ProcessYoutubeWebhook::dispatch($videoId, 'new_video');
+            } else {
+                // New comment on a subscribed video
+                ProcessYoutubeWebhook::dispatch($videoId, 'new_comment');
+            }
 
             return response('OK', 200);
 
@@ -84,7 +91,8 @@ class YoutubeWebhookController extends Controller
                 'body_preview' => substr($body, 0, 500),
             ]);
 
-            return response('Error', 500);
+            // Return 200 even on errors — hub retries on 5xx, and we don't want spam
+            return response('Error', 200);
         }
     }
 }

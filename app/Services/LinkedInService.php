@@ -12,34 +12,7 @@ use Illuminate\Support\Facades\Log;
 
 class LinkedInService
 {
-    private string $baseUrl;
-
-    public function __construct()
-    {
-        $this->baseUrl = env('LINKEDIN_API_BASE', 'https://api.linkedin.com');
-    }
-
-    public function getAuthUrl(string $state): string
-    {
-        $scope = implode(' ', [
-            'openid',
-            'profile',
-            'email',
-            'w_member_social',
-            'r_organization_social',
-            'w_organization_social',
-        ]);
-
-        $params = http_build_query([
-            'response_type' => 'code',
-            'client_id' => env('LINKEDIN_CLIENT_ID'),
-            'redirect_uri' => env('LINKEDIN_REDIRECT_URI'),
-            'state' => $state,
-            'scope' => $scope,
-        ]);
-
-        return "https://www.linkedin.com/oauth/v2/authorization?{$params}";
-    }
+    private string $baseUrl = 'https://api.linkedin.com/v2';
 
     public function exchangeCodeForToken(string $code): array
     {
@@ -51,83 +24,39 @@ class LinkedInService
             'client_secret' => env('LINKEDIN_CLIENT_SECRET'),
         ]);
 
-        $data = $response->json();
-
         if (!$response->successful()) {
-            throw new \Exception($data['error_description'] ?? $data['error'] ?? 'LinkedIn token exchange failed.');
+            throw new \Exception('LinkedIn token exchange failed: ' . $response->body());
         }
 
-        return $data;
+        return $response->json();
     }
 
-    public function validToken(SocialAccount $account): string
-    {
-        if (!$account->token_expires_at || now()->greaterThan($account->token_expires_at->copy()->subMinutes(5))) {
-            throw new \Exception('LinkedIn token expired. Please reconnect LinkedIn.');
-        }
-
-        return $account->access_token;
-    }
-
-    public function getCurrentUser(string $accessToken): array
-    {
-        $response = Http::withToken($accessToken)
-            ->get("{$this->baseUrl}/v2/userinfo");
-
-        $data = $response->json();
-
-        if (!$response->successful()) {
-            throw new \Exception($data['message'] ?? 'Unable to fetch LinkedIn user profile.');
-        }
-
-        return $data;
-    }
-
-    public function getManagedOrganizations(string $accessToken): array
+    public function getMyProfile(string $accessToken): ?array
     {
         $response = Http::withToken($accessToken)
             ->withHeaders([
                 'LinkedIn-Version' => '202405',
                 'X-Restli-Protocol-Version' => '2.0.0',
             ])
-            ->get("{$this->baseUrl}/v2/organizationalEntityAcls", [
-                'q' => 'roleAssignee',
-                'role' => 'ADMINISTRATOR',
-                'projection' => '(elements*(organizationalTarget~(id,localizedName,vanityName)))',
-            ]);
-
-        $data = $response->json();
+            ->get("{$this->baseUrl}/userinfo");
 
         if (!$response->successful()) {
-            throw new \Exception($data['message'] ?? 'Unable to fetch LinkedIn organizations. Product approval may be pending.');
+            return null;
         }
 
-        return collect($data['elements'] ?? [])
-            ->map(function ($item) {
-                $org = $item['organizationalTarget~'] ?? null;
-
-                if (!$org) {
-                    return null;
-                }
-
-                return [
-                    'id' => 'urn:li:organization:' . $org['id'],
-                    'numeric_id' => $org['id'],
-                    'name' => $org['localizedName'] ?? 'LinkedIn Organization',
-                    'vanityName' => $org['vanityName'] ?? null,
-                    'raw' => $org,
-                ];
-            })
-            ->filter()
-            ->values()
-            ->toArray();
+        return $response->json();
     }
 
     public function syncComments(SocialAccount $account, array $options = []): int
     {
-        $postWindowDays = $options['post_window_days'] ?? 30;
         $commentWindowDays = $options['comment_window_days'] ?? 7;
+        $isFullSync = $options['full_sync'] ?? false;
         $accessToken = $this->validToken($account);
+
+        // NO post age filter — fetch comments from ALL posts
+        $commentCutoff = ($isFullSync || $commentWindowDays === 0)
+            ? Carbon::createFromTimestamp(0)
+            : now()->subDays($commentWindowDays);
 
         $posts = $this->getOrganizationPosts($account, $accessToken);
 
@@ -140,11 +69,8 @@ class LinkedInService
                 continue;
             }
 
+            // Store post (no age filter)
             $publishedAt = data_get($post, 'createdAt') ?? data_get($post, 'publishedAt');
-            if ($publishedAt && Carbon::parse($publishedAt)->lt(now()->subDays($postWindowDays))) {
-                continue;
-            }
-
             $storedPost = SocialPost::updateOrCreate(
                 [
                     'platform_post_id' => $postId,
@@ -154,7 +80,7 @@ class LinkedInService
                     'organization_id' => $account->organization_id,
                     'social_account_id' => $account->id,
                     'content' => $post['commentary'] ?? $post['text'] ?? '',
-                    'posted_at' => isset($post['createdAt']) ? date('Y-m-d H:i:s', intval($post['createdAt'] / 1000)) : now(),
+                    'posted_at' => $publishedAt ? date('Y-m-d H:i:s', intval($publishedAt / 1000)) : now(),
                 ]
             );
 
@@ -167,8 +93,9 @@ class LinkedInService
                     continue;
                 }
 
+                // Skip only comments older than the comment window
                 $commentedAt = data_get($comment, 'createdAt') ?? data_get($comment, 'publishedAt');
-                if ($commentedAt && Carbon::parse($commentedAt)->lt(now()->subDays($commentWindowDays))) {
+                if ($commentedAt && Carbon::parse($commentedAt)->lt($commentCutoff)) {
                     continue;
                 }
 
@@ -183,15 +110,10 @@ class LinkedInService
                         'organization_id' => $account->organization_id,
                         'social_account_id' => $account->id,
                         'social_post_id' => $storedPost->id,
-                        'author_name' => $comment['authorName'] ?? 'LinkedIn User',
-                        'platform_author_id' => $comment['actor'] ?? null,
+                        'author_name' => data_get($comment, 'author.name', 'LinkedIn User'),
+                        'platform_author_id' => data_get($comment, 'author.id'),
                         'content' => $message,
-                        'commented_at' => isset($comment['createdAt'])
-                            ? Carbon::createFromTimestampMs($comment['createdAt'])
-                                ->setTimezone(config('app.timezone'))
-                                ->format('Y-m-d H:i:s')
-                            : now()->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s'),
-
+                        'commented_at' => $commentedAt ? date('Y-m-d H:i:s', intval($commentedAt / 1000)) : now(),
                         'status' => 'new',
                     ]
                 );
@@ -199,7 +121,8 @@ class LinkedInService
                 if ($storedComment->wasRecentlyCreated) {
                     $totalComments++;
 
-                    if ($this->shouldAnalyzeComment($account, $storedComment)) {
+                    // Only dispatch AI in normal sync
+                    if (!$isFullSync && $this->shouldAnalyzeComment($account, $storedComment)) {
                         AnalyzeWithOllama::dispatch($storedComment);
                     }
                 }
@@ -208,175 +131,163 @@ class LinkedInService
 
         $account->update(['last_synced_at' => now()]);
 
+        Log::info('LinkedIn sync completed', [
+            'account_id' => $account->id,
+            'total_comments' => $totalComments,
+            'full_sync' => $isFullSync,
+        ]);
+
         return $totalComments;
     }
 
-    public function getOrganizationPosts(SocialAccount $account, string $accessToken): array
-    {
-        $response = Http::withToken($accessToken)
-            ->withHeaders([
-                'LinkedIn-Version' => '202405',
-                'X-Restli-Protocol-Version' => '2.0.0',
-            ])
-            ->get("{$this->baseUrl}/rest/posts", [
-                'q' => 'author',
-                'author' => $account->platform_account_id,
-                'count' => 50,
-                'sortBy' => 'LAST_MODIFIED',
-            ]);
-
-        $data = $response->json();
-
-        if (!$response->successful()) {
-            throw new \Exception($data['message'] ?? 'Unable to fetch LinkedIn posts. Product approval may be pending.');
-        }
-
-        return $data['elements'] ?? [];
-    }
-
-    public function getPostComments(SocialAccount $account, string $accessToken, string $postUrn): array
-    {
-        $response = Http::withToken($accessToken)
-            ->withHeaders([
-                'LinkedIn-Version' => '202405',
-                'X-Restli-Protocol-Version' => '2.0.0',
-            ])
-            ->get("{$this->baseUrl}/rest/socialActions/{$postUrn}/comments", [
-                'count' => 100,
-            ]);
-
-        $data = $response->json();
-
-        if (!$response->successful()) {
-            throw new \Exception($data['message'] ?? 'Unable to fetch LinkedIn comments. Community Management API approval may be pending.');
-        }
-
-        return $data['elements'] ?? [];
-    }
-
-    /**
-     * Process a single comment event from LinkedIn webhook.
-     * Fetches the latest comment details from LinkedIn and stores it.
-     */
-    public function syncSingleCommentFromWebhook(SocialAccount $account, string $commentUrn): ?SocialComment
+    public function replyToComment(SocialAccount $account, string $commentId, string $message): array
     {
         $accessToken = $this->validToken($account);
 
-        // Extract post URN from comment URN
-        $parts = explode(':', $commentUrn);
-        $postUrn = implode(':', array_slice($parts, 0, 4));
-
         $response = Http::withToken($accessToken)
             ->withHeaders([
                 'LinkedIn-Version' => '202405',
                 'X-Restli-Protocol-Version' => '2.0.0',
             ])
-            ->get("{$this->baseUrl}/rest/socialActions/{$postUrn}/comments/{$commentUrn}");
+            ->post("{$this->baseUrl}/socialActions/{$commentId}/comments", [
+                'message' => ['text' => $message],
+            ]);
+
+        $data = $response->json();
 
         if (!$response->successful()) {
-            Log::error('LinkedIn: failed to fetch single comment', [
-                'comment_urn' => $commentUrn,
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
+            throw new \Exception($data['message'] ?? 'Failed to reply on LinkedIn.');
+        }
+
+        return $data;
+    }
+
+    public function syncSingleCommentFromWebhook(SocialAccount $account, array $value): ?SocialComment
+    {
+        $commentId = $value['comment_id'] ?? $value['id'] ?? null;
+        $postId = $value['post_id'] ?? $value['object'] ?? null;
+
+        if (!$commentId || !$postId) {
             return null;
         }
 
-        $comment = $response->json();
-
-        $storedPost = SocialPost::updateOrCreate(
+        $storedPost = SocialPost::firstOrCreate(
             [
-                'platform_post_id' => $postUrn,
+                'platform_post_id' => $postId,
                 'platform' => 'linkedin',
             ],
             [
                 'organization_id' => $account->organization_id,
                 'social_account_id' => $account->id,
                 'content' => '',
-                'posted_at' => isset($comment['createdAt'])
-                    ? date('Y-m-d H:i:s', intval($comment['createdAt'] / 1000))
-                    : now(),
+                'posted_at' => now(),
             ]
         );
 
-        $message = $comment['message']['text'] ?? $comment['text'] ?? '';
+        $author = data_get($value, 'author', []);
+        $authorName = data_get($author, 'name', 'LinkedIn User');
+        $authorId = data_get($author, 'id');
 
         $storedComment = SocialComment::updateOrCreate(
             [
-                'platform_comment_id' => $commentUrn,
+                'platform_comment_id' => $commentId,
                 'platform' => 'linkedin',
             ],
             [
                 'organization_id' => $account->organization_id,
                 'social_account_id' => $account->id,
                 'social_post_id' => $storedPost->id,
-                'author_name' => $comment['authorName'] ?? 'LinkedIn User',
-                'platform_author_id' => $comment['actor'] ?? null,
-                'content' => $message,
-                'commented_at' => isset($comment['createdAt'])
-                    ? \Carbon\Carbon::createFromTimestampMs($comment['createdAt'])
-                        ->setTimezone(config('app.timezone'))
-                        ->format('Y-m-d H:i:s')
-                    : now()->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s'),
-
+                'author_name' => $authorName,
+                'platform_author_id' => $authorId,
+                'content' => data_get($value, 'message.text', ''),
+                'direction' => 'inbound',
                 'status' => 'new',
+                'commented_at' => now(),
             ]
         );
 
-        if ($storedComment->wasRecentlyCreated && $this->shouldAnalyzeComment($account, $storedComment)) {
-            AnalyzeWithOllama::dispatch($storedComment);
+        if ($storedComment?->wasRecentlyCreated) {
+            if ($this->shouldAnalyzeComment($account, $storedComment)) {
+                AnalyzeWithOllama::dispatch($storedComment);
+            }
         }
 
         return $storedComment;
     }
 
-    public function replyToComment(SocialAccount $account, string $parentCommentUrn, string $message): array
+    private function getOrganizationPosts(SocialAccount $account, string $accessToken): array
     {
-        $accessToken = $this->validToken($account);
-
         $response = Http::withToken($accessToken)
             ->withHeaders([
                 'LinkedIn-Version' => '202405',
                 'X-Restli-Protocol-Version' => '2.0.0',
             ])
-            ->post("{$this->baseUrl}/rest/socialActions/{$parentCommentUrn}/comments", [
-                'actor' => $account->platform_account_id,
-                'message' => [
-                    'text' => $message,
-                ],
+            ->get("{$this->baseUrl}/ugcPosts", [
+                'q' => 'authors',
+                'authors' => 'List(urn:li:organization:' . $account->platform_account_id . ')',
+                'count' => 50,
+                'sortBy' => 'LAST_MODIFIED',
             ]);
-
-        $data = $response->json();
 
         if (!$response->successful()) {
-            throw new \Exception($data['message'] ?? 'Unable to reply on LinkedIn.');
+            throw new \Exception($response->json('message') ?? 'Failed to fetch LinkedIn posts.');
         }
 
-        return $data;
+        return $response->json('elements') ?? [];
     }
 
-    public function publishReply(SocialComment $comment, string $message, SocialAccount $account): bool
+    private function getPostComments(SocialAccount $account, string $accessToken, string $postId): array
     {
-        try {
-            $this->replyToComment($account, $comment->platform_comment_id, $message);
-
-            $comment->update([
-                'status' => 'replied',
-                'ai_response_text' => $message,
-                'replied_at' => now(),
+        $response = Http::withToken($accessToken)
+            ->withHeaders([
+                'LinkedIn-Version' => '202405',
+                'X-Restli-Protocol-Version' => '2.0.0',
+            ])
+            ->get("{$this->baseUrl}/socialActions/{$postId}/comments", [
+                'count' => 100,
             ]);
 
-            return true;
-        } catch (\Exception $e) {
-            Log::error('LinkedIn publish reply exception: ' . $e->getMessage());
-            return false;
+        if (!$response->successful()) {
+            Log::error('LinkedIn comments error', ['response' => $response->json()]);
+            return [];
         }
+
+        return $response->json('elements') ?? [];
     }
 
-    private function shouldAnalyzeComment(
-        SocialAccount $account,
-        SocialComment $comment
-    ): bool {
+    private function validToken(SocialAccount $account): string
+    {
+        if ($account->token_expires_at && $account->token_expires_at->isFuture()) {
+            return $account->access_token;
+        }
+
+        if (!$account->refresh_token) {
+            throw new \Exception('LinkedIn access token expired and no refresh token.');
+        }
+
+        $response = Http::asForm()->post('https://www.linkedin.com/oauth/v2/accessToken', [
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $account->refresh_token,
+            'client_id' => env('LINKEDIN_CLIENT_ID'),
+            'client_secret' => env('LINKEDIN_CLIENT_SECRET'),
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('Failed to refresh LinkedIn token.');
+        }
+
+        $tokenData = $response->json();
+
+        $account->update([
+            'access_token' => $tokenData['access_token'],
+            'token_expires_at' => now()->addSeconds($tokenData['expires_in'] ?? 7200),
+        ]);
+
+        return $tokenData['access_token'];
+    }
+
+    private function shouldAnalyzeComment(SocialAccount $account, SocialComment $comment): bool
+    {
         if (!$comment->wasRecentlyCreated) {
             return false;
         }

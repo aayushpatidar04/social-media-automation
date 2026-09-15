@@ -26,36 +26,26 @@ class FacebookService
         try {
             Log::info('Starting sync for account: ' . $account->platform_account_name);
 
-            $postWindowDays = $options['post_window_days'] ?? 30;
             $commentWindowDays = $options['comment_window_days'] ?? 7;
             $isFullSync = $options['full_sync'] ?? false;
 
-            // Full sync (window = 0) = no date cutoff, fetch everything
-            if ($isFullSync || $postWindowDays === 0) {
-                $postCutoff = Carbon::createFromTimestamp(0);
-            } else {
-                $postCutoff = now()->subDays($postWindowDays);
-            }
-
-            if ($isFullSync || $commentWindowDays === 0) {
-                $commentCutoff = Carbon::createFromTimestamp(0);
-            } else {
-                $commentCutoff = now()->subDays($commentWindowDays);
-            }
+            // NEVER skip posts by age — a fresh comment on an old post must be caught
+            // Only comment age matters for filtering
+            $commentCutoff = ($isFullSync || $commentWindowDays === 0)
+                ? Carbon::createFromTimestamp(0)
+                : now()->subDays($commentWindowDays);
 
             $totalComments = 0;
-            $skippedOldPosts = 0;
 
+            // Get all posts from the page
             $posts = $this->getPagePosts($account);
             Log::info('Found ' . count($posts) . ' posts');
 
             foreach ($posts as $post) {
-                $publishedAt = $post['created_time'] ?? null;
-                if ($publishedAt && Carbon::parse($publishedAt)->lt($postCutoff)) {
-                    $skippedOldPosts++;
-                    continue;
-                }
+                // NO post age filter — fetch comments from ALL posts
 
+                // Store post
+                $publishedAt = $post['created_time'] ?? null;
                 $storedPost = SocialPost::updateOrCreate(
                     [
                         'platform_post_id' => $post['id'],
@@ -70,10 +60,11 @@ class FacebookService
                     ]
                 );
 
+                // Get comments on this post
                 $comments = $this->getPostComments($account, $post['id']);
-                Log::info('Found ' . count($comments) . ' comments on post ' . $post['id']);
 
                 foreach ($comments as $comment) {
+                    // Skip only comments older than the comment window
                     $commentedAt = $comment['created_time'] ?? null;
                     if ($commentedAt && Carbon::parse($commentedAt)->lt($commentCutoff)) {
                         continue;
@@ -90,13 +81,14 @@ class FacebookService
                     if ($storedRootComment?->wasRecentlyCreated) {
                         $totalComments++;
 
-                        // Only dispatch AI analysis in normal sync, not full sync
+                        // Only dispatch AI in normal sync, not full sync
                         if (!$isFullSync && $this->shouldAnalyzeComment($account, $storedRootComment)) {
                             AnalyzeWithOllama::dispatch($storedRootComment);
                         }
                     }
 
                     foreach (($comment['comments']['data'] ?? []) as $reply) {
+                        // Skip replies older than the window
                         $replyAt = $reply['created_time'] ?? null;
                         if ($replyAt && Carbon::parse($replyAt)->lt($commentCutoff)) {
                             continue;
@@ -126,8 +118,6 @@ class FacebookService
             Log::info('Facebook sync completed', [
                 'account_id' => $account->id,
                 'total_comments' => $totalComments,
-                'skipped_old_posts' => $skippedOldPosts,
-                'full_sync' => $isFullSync,
             ]);
 
             return $totalComments;
@@ -147,11 +137,6 @@ class FacebookService
                 'access_token' => $account->access_token,
             ]
         );
-
-        Log::info('Facebook Posts Response', [
-            'status' => $response->status(),
-            'body' => $response->body(),
-        ]);
 
         $data = $response->json();
 
@@ -218,12 +203,6 @@ class FacebookService
         $parentPlatformId = $value['parent_id'] ?? null;
 
         if (!$commentId || !$postId) {
-            return null;
-        }
-
-        $comment = $value;
-
-        if (!$comment) {
             return null;
         }
 
