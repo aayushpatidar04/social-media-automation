@@ -21,7 +21,6 @@ class InstagramService
         $commentWindowDays = $options['comment_window_days'] ?? 7;
         $isFullSync = $options['full_sync'] ?? false;
 
-        // NO post age filter — fetch comments from ALL posts
         $commentCutoff = ($isFullSync || $commentWindowDays === 0)
             ? Carbon::createFromTimestamp(0)
             : now()->subDays($commentWindowDays);
@@ -31,7 +30,6 @@ class InstagramService
         $mediaList = $this->getMedia($account);
 
         foreach ($mediaList as $media) {
-            // Store post (no age skip)
             $publishedAt = $media['timestamp'] ?? null;
             $storedPost = SocialPost::updateOrCreate(
                 [
@@ -53,7 +51,6 @@ class InstagramService
             );
 
             foreach ($comments as $comment) {
-                // Skip only comments older than the comment window
                 $commentedAt = $comment['timestamp'] ?? null;
                 if ($commentedAt && Carbon::parse($commentedAt)->lt($commentCutoff)) {
                     continue;
@@ -69,7 +66,6 @@ class InstagramService
                 if ($storedRootComment?->wasRecentlyCreated) {
                     $totalComments++;
 
-                    // Only dispatch AI in normal sync, skip in full sync
                     if (!$isFullSync && $this->shouldAnalyzeComment($account, $storedRootComment)) {
                         AnalyzeWithOllama::dispatch($storedRootComment);
                     }
@@ -198,6 +194,51 @@ class InstagramService
         }
 
         return $storedComment;
+    }
+
+    /**
+     * Fetch full comment data from Instagram Graph API.
+     * Used by ProcessMetaWebhook to get the complete comment structure
+     * after receiving a webhook notification with just a comment ID.
+     */
+    public function fetchCommentData(SocialAccount $account, string $commentId): ?array
+    {
+        $response = Http::get(
+            "https://graph.instagram.com/{$this->graphVersion}/{$commentId}",
+            [
+                'fields' => 'id,text,timestamp,from,username,media_id,parent_id',
+                'access_token' => $account->access_token,
+            ]
+        );
+
+        if (!$response->successful()) {
+            return null;
+        }
+
+        $data = $response->json();
+
+        if (isset($data['error'])) {
+            return null;
+        }
+
+        // Also fetch the media info so we have the post_id
+        $mediaId = $data['media_id'] ?? null;
+
+        if ($mediaId && !isset($data['media'])) {
+            $mediaResponse = Http::get(
+                "https://graph.instagram.com/{$this->graphVersion}/{$mediaId}",
+                [
+                    'fields' => 'id,caption,permalink,media_type,thumbnail_url',
+                    'access_token' => $account->access_token,
+                ]
+            );
+
+            if ($mediaResponse->successful()) {
+                $data['media'] = $mediaResponse->json();
+            }
+        }
+
+        return $data;
     }
 
     private function getMedia(SocialAccount $account): array
@@ -375,8 +416,8 @@ class InstagramService
         if ($parentComment && $storedComment->wasRecentlyCreated) {
             $parentComment->increment('reply_count');
 
-            if ($parentComment->root_id) {
-                SocialComment::where('id', $parentComment->root_id)->increment('reply_count');
+            if ($storedComment->root_id) {
+                SocialComment::where('id', $storedComment->root_id)->increment('reply_count');
             }
         }
 

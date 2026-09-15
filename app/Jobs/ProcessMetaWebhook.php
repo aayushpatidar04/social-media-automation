@@ -12,7 +12,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class ProcessMetaWebhook implements ShouldQueue
@@ -171,7 +170,29 @@ class ProcessMetaWebhook implements ShouldQueue
             return;
         }
 
-        app(InstagramService::class)->syncSingleCommentFromWebhook($account, $commentId);
+        // Fetch full comment data from Instagram Graph API
+        $instagramService = app(InstagramService::class);
+        $fullCommentData = $instagramService->fetchCommentData($account, $commentId);
+
+        if (!$fullCommentData) {
+            Log::warning('Could not fetch Instagram comment data', [
+                'comment_id' => $commentId,
+            ]);
+            return;
+        }
+
+        // Build the value array that InstagramService.syncSingleCommentFromWebhook expects
+        $instagramValue = [
+            'comment_id' => $fullCommentData['id'] ?? $commentId,
+            'post_id' => $fullCommentData['media_id'] ?? null,
+            'parent_id' => $fullCommentData['parent_id'] ?? null,
+            'text' => $fullCommentData['text'] ?? '',
+            'from' => $fullCommentData['from'] ?? [],
+            'timestamp' => $fullCommentData['timestamp'] ?? null,
+            'media' => $fullCommentData['media'] ?? [],
+        ];
+
+        app(InstagramService::class)->syncSingleCommentFromWebhook($account, $instagramValue);
     }
 
     private function handleInstagramCommentRemove(array $entry, array $change): void
@@ -202,7 +223,7 @@ class ProcessMetaWebhook implements ShouldQueue
             $pageId = $account->platform_account_id;
             $pageToken = $account->access_token;
 
-            $response = Http::get("https://graph.facebook.com/{$pageId}", [
+            $response = \Illuminate\Support\Facades\Http::get("https://graph.facebook.com/{$pageId}", [
                 'fields' => 'connected_instagram_account',
                 'access_token' => $pageToken,
             ]);

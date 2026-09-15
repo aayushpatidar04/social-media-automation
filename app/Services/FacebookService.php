@@ -29,22 +29,16 @@ class FacebookService
             $commentWindowDays = $options['comment_window_days'] ?? 7;
             $isFullSync = $options['full_sync'] ?? false;
 
-            // NEVER skip posts by age — a fresh comment on an old post must be caught
-            // Only comment age matters for filtering
             $commentCutoff = ($isFullSync || $commentWindowDays === 0)
                 ? Carbon::createFromTimestamp(0)
                 : now()->subDays($commentWindowDays);
 
             $totalComments = 0;
 
-            // Get all posts from the page
             $posts = $this->getPagePosts($account);
             Log::info('Found ' . count($posts) . ' posts');
 
             foreach ($posts as $post) {
-                // NO post age filter — fetch comments from ALL posts
-
-                // Store post
                 $publishedAt = $post['created_time'] ?? null;
                 $storedPost = SocialPost::updateOrCreate(
                     [
@@ -60,11 +54,9 @@ class FacebookService
                     ]
                 );
 
-                // Get comments on this post
                 $comments = $this->getPostComments($account, $post['id']);
 
                 foreach ($comments as $comment) {
-                    // Skip only comments older than the comment window
                     $commentedAt = $comment['created_time'] ?? null;
                     if ($commentedAt && Carbon::parse($commentedAt)->lt($commentCutoff)) {
                         continue;
@@ -81,14 +73,12 @@ class FacebookService
                     if ($storedRootComment?->wasRecentlyCreated) {
                         $totalComments++;
 
-                        // Only dispatch AI in normal sync, not full sync
                         if (!$isFullSync && $this->shouldAnalyzeComment($account, $storedRootComment)) {
                             AnalyzeWithOllama::dispatch($storedRootComment);
                         }
                     }
 
                     foreach (($comment['comments']['data'] ?? []) as $reply) {
-                        // Skip replies older than the window
                         $replyAt = $reply['created_time'] ?? null;
                         if ($replyAt && Carbon::parse($replyAt)->lt($commentCutoff)) {
                             continue;
@@ -115,6 +105,9 @@ class FacebookService
 
             $account->update(['last_synced_at' => now()]);
 
+            // Auto-sync linked Instagram Business account if this Facebook page has one
+            $this->syncLinkedInstagram($account, $options);
+
             Log::info('Facebook sync completed', [
                 'account_id' => $account->id,
                 'total_comments' => $totalComments,
@@ -126,6 +119,115 @@ class FacebookService
             Log::error('Facebook sync error for account ' . $account->id . ': ' . $e->getMessage());
             throw $e;
         }
+    }
+
+    /**
+     * Find and sync the Instagram Business account linked to this Facebook page.
+     * Uses the Graph API: /{page-id}?fields=instagram_business_account
+     */
+    private function syncLinkedInstagram(SocialAccount $facebookAccount, array $options = []): void
+    {
+        try {
+            $igAccountId = $this->getLinkedInstagramAccountId($facebookAccount);
+
+            if (!$igAccountId) {
+                Log::info('No linked Instagram account found for Facebook page', [
+                    'account_id' => $facebookAccount->id,
+                ]);
+                return;
+            }
+
+            // Find or create the Instagram SocialAccount record
+            $igAccount = SocialAccount::where('platform', 'instagram')
+                ->where('platform_account_id', $igAccountId)
+                ->where('organization_id', $facebookAccount->organization_id)
+                ->first();
+
+            if (!$igAccount) {
+                $igAccount = SocialAccount::create([
+                    'organization_id' => $facebookAccount->organization_id,
+                    'user_id' => $facebookAccount->user_id,
+                    'platform' => 'instagram',
+                    'platform_account_id' => $igAccountId,
+                    'platform_account_name' => 'Instagram (' . $igAccountId . ')',
+                    'platform_account_handle' => '',
+                    'access_token' => $facebookAccount->access_token,
+                    'refresh_token' => $facebookAccount->refresh_token,
+                    'token_expires_at' => $facebookAccount->token_expires_at,
+                    'status' => 'connected',
+                    'is_active' => true,
+                    'metadata' => [
+                        'linked_to_facebook' => $facebookAccount->id,
+                        'facebook_page_id' => $facebookAccount->platform_account_id,
+                    ],
+                ]);
+
+                Log::info('Created Instagram account linked to Facebook page', [
+                    'instagram_id' => $igAccount->id,
+                    'facebook_id' => $facebookAccount->id,
+                    'ig_business_id' => $igAccountId,
+                ]);
+            }
+
+            // Sync Instagram comments
+            $instagramService = new InstagramService();
+            $igOptions = array_merge($options, [
+                'full_sync' => $options['full_sync'] ?? false,
+            ]);
+
+            $igCount = $instagramService->syncComments($igAccount, $igOptions);
+
+            Log::info('Instagram sync completed (via Facebook link)', [
+                'instagram_id' => $igAccount->id,
+                'new_comments' => $igCount,
+                'linked_to_facebook' => $facebookAccount->id,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::warning('Linked Instagram sync failed', [
+                'facebook_id' => $facebookAccount->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Call Graph API to get the linked Instagram Business account ID.
+     * Endpoint: GET /{page-id}?fields=instagram_business_account
+     */
+    public function getLinkedInstagramAccountId(SocialAccount $account): ?string
+    {
+        $response = Http::get(
+            "https://graph.facebook.com/{$this->graphVersion}/{$account->platform_account_id}",
+            [
+                'fields' => 'instagram_business_account',
+                'access_token' => $account->access_token,
+            ]
+        );
+
+        if (!$response->successful()) {
+            Log::warning('Failed to fetch Instagram link for Facebook page', [
+                'account_id' => $account->id,
+                'status' => $response->status(),
+            ]);
+            return null;
+        }
+
+        $igData = $response->json('instagram_business_account');
+
+        if (!$igData || !isset($igData['id'])) {
+            Log::info('No Instagram Business account linked to this Facebook page', [
+                'account_id' => $account->id,
+            ]);
+            return null;
+        }
+
+        Log::info('Found linked Instagram Business account', [
+            'facebook_id' => $account->id,
+            'ig_business_id' => $igData['id'],
+        ]);
+
+        return $igData['id'];
     }
 
     private function getPagePosts(SocialAccount $account): array
@@ -381,7 +483,7 @@ class FacebookService
 
                 'raw_payload' => $comment,
                 'commented_at' => isset($comment['created_time'])
-                    ? \Carbon\Carbon::parse($comment['created_time'])->setTimezone(config('app.timezone'))
+                    ? Carbon::parse($comment['created_time'])->setTimezone(config('app.timezone'))
                     : now()->setTimezone(config('app.timezone')),
 
                 'status' => $isOwnComment ? 'sent' : 'new',
@@ -398,8 +500,8 @@ class FacebookService
         if ($parentComment && $storedComment->wasRecentlyCreated) {
             $parentComment->increment('reply_count');
 
-            if ($parentComment->root_id) {
-                SocialComment::where('id', $parentComment->root_id)->increment('reply_count');
+            if ($storedComment->root_id) {
+                SocialComment::where('id', $storedComment->root_id)->increment('reply_count');
             }
         }
 
