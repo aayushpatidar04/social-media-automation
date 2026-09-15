@@ -434,23 +434,45 @@ class YoutubeService
         // Channel-level topic is the only topic third parties may subscribe to
         $topicUrl = "https://www.youtube.com/xml/feeds/videos.xml?channel_id={$channelId}";
 
-        $response = Http::asForm()->post($hubUrl, [
-            'hub.callback' => $webhookUrl,
-            'hub.topic' => $topicUrl,
-            'hub.verify' => 'sync',
-            'hub.mode' => 'subscribe',
-            'hub.lease_seconds' => 864000,
-        ]);
+        $subscribed = false;
+        $lastBody = '';
 
-        if ($response->successful() || $response->status() === 204) {
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            $response = Http::asForm()->post($hubUrl, [
+                'hub.callback' => $webhookUrl,
+                'hub.topic' => $topicUrl,
+                'hub.verify' => 'sync',
+                'hub.mode' => 'subscribe',
+                'hub.lease_seconds' => 864000,
+            ]);
+
+            if ($response->successful() || $response->status() === 204) {
+                $subscribed = true;
+                break;
+            }
+
+            $lastBody = $response->body();
+
+            Log::warning('YouTube PubSubHubbub attempt failed, retrying', [
+                'account_id' => $account->id,
+                'channel_id' => $channelId,
+                'attempt' => $attempt,
+                'status' => $response->status(),
+                'body' => $lastBody,
+            ]);
+
+            // Hub asks for 2^attempt seconds; don't hammer it
+            sleep((int) pow(2, $attempt)); // 2s, 4s, 8s
+        }
+
+        if ($subscribed) {
             $success = 1;
         } else {
             $failed = 1;
-            Log::warning('YouTube PubSubHubbub channel subscription failed', [
+            Log::warning('YouTube PubSubHubbub channel subscription failed after retries', [
                 'account_id' => $account->id,
                 'channel_id' => $channelId,
-                'status' => $response->status(),
-                'body' => $response->body(),
+                'body' => $lastBody,
             ]);
         }
 
