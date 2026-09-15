@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\AnalyzeWithOllama;
 use App\Models\SocialAccount;
 use App\Models\SocialComment;
 use App\Models\SocialPost;
@@ -122,7 +123,12 @@ class YoutubeService
         }
 
         $totalNew = 0;
-        $sinceId = $account->metadata['last_synced_comment_id'] ?? null;
+
+        // 0 = full sync → fetch everything, so disable sinceId pagination
+        // (otherwise old comments already past the cursor never come back)
+        $sinceId = $commentWindowDays > 0
+            ? ($account->metadata['last_synced_comment_id'] ?? null)
+            : null;
 
         $threads = $this->getCommentThreads($accessToken, $videoId, $sinceId, $commentWindowDays);
 
@@ -142,20 +148,12 @@ class YoutubeService
         return $totalNew;
     }
 
-    private function processCommentThread(SocialAccount $account, SocialPost $storedPost, array $thread, string $topLevelCommentId): int
+    private function processCommentThread(SocialAccount $account, SocialPost $storedPost, array $thread, string $topLevelCommentId, bool $isFullSync = false): int
     {
         $snippet = data_get($thread, 'snippet.topLevelComment.snippet', []);
         $commentId = data_get($thread, 'snippet.topLevelComment.id');
 
         if (!$commentId) {
-            return 0;
-        }
-
-        $exists = SocialComment::where('platform', 'youtube')
-            ->where('platform_comment_id', $commentId)
-            ->exists();
-
-        if ($exists) {
             return 0;
         }
 
@@ -173,30 +171,85 @@ class YoutubeService
                 ->first();
         }
 
-        $rootId = $parentComment?->id;
-
-        SocialComment::create([
-            'organization_id' => $account->organization_id,
-            'social_account_id' => $account->id,
-            'social_post_id' => $storedPost->id,
-            'platform' => 'youtube',
-            'platform_comment_id' => $commentId,
-            'platform_parent_id' => $parentId,
-            'root_id' => $rootId,
-            'parent_id' => $parentComment?->id,
-            'author_name' => $authorName,
-            'author_avatar_url' => $authorAvatar,
-            'platform_author_id' => data_get($snippet, 'authorChannelId.value'),
-            'content' => $content,
-            'direction' => 'inbound',
-            'status' => 'new',
-            'commented_at' => $commentedAt,
-            'metadata' => [
-                'like_count' => data_get($snippet, 'likeCount', 0),
+        // updateOrCreate: full sync re-running over old comments won't
+        // create duplicates — it refreshes metadata instead of skipping
+        $comment = SocialComment::updateOrCreate(
+            [
+                'platform' => 'youtube',
+                'platform_comment_id' => $commentId,
             ],
-        ]);
+            [
+                'organization_id' => $account->organization_id,
+                'social_account_id' => $account->id,
+                'social_post_id' => $storedPost->id,
+                'platform_parent_id' => $parentId,
+                'root_id' => $parentComment?->id,
+                'parent_id' => $parentComment?->id,
+                'author_name' => $authorName,
+                'author_avatar_url' => $authorAvatar,
+                'platform_author_id' => data_get($snippet, 'authorChannelId.value'),
+                'content' => $content,
+                'direction' => 'inbound',
+                'status' => 'new',
+                'commented_at' => Carbon::parse($commentedAt),
+                'metadata' => [
+                    'like_count' => data_get($snippet, 'likeCount', 0),
+                ],
+            ]
+        );
 
-        return 1;
+        $totalNew = $comment->wasRecentlyCreated ? 1 : 0;
+
+        // Only dispatch AI analysis in normal sync, not full sync
+        if ($comment->wasRecentlyCreated && !$isFullSync && $this->shouldAnalyzeComment($account, $comment)) {
+            AnalyzeWithOllama::dispatch($comment);
+        }
+
+        // Store replies embedded in this thread (commentThreads.list returns
+        // them nested when part=replies is requested) — previously never saved
+        foreach (data_get($thread, 'replies.comments', []) as $reply) {
+            $replyId = data_get($reply, 'id');
+            if (!$replyId) {
+                continue;
+            }
+
+            $replySnippet = data_get($reply, 'snippet', []);
+
+            $storedReply = SocialComment::updateOrCreate(
+                [
+                    'platform' => 'youtube',
+                    'platform_comment_id' => $replyId,
+                ],
+                [
+                    'organization_id' => $account->organization_id,
+                    'social_account_id' => $account->id,
+                    'social_post_id' => $storedPost->id,
+                    'platform_parent_id' => $commentId,
+                    'root_id' => $comment->id,
+                    'parent_id' => $comment->id,
+                    'author_name' => data_get($replySnippet, 'authorDisplayName', 'Unknown'),
+                    'author_avatar_url' => data_get($replySnippet, 'authorProfileImageUrl'),
+                    'platform_author_id' => data_get($replySnippet, 'authorChannelId.value'),
+                    'content' => data_get($replySnippet, 'textDisplay', ''),
+                    'direction' => 'inbound',
+                    'status' => 'new',
+                    'commented_at' => Carbon::parse(data_get($replySnippet, 'publishedAt', now()->toIso8601String())),
+                    'metadata' => [
+                        'like_count' => data_get($replySnippet, 'likeCount', 0),
+                    ],
+                ]
+            );
+
+            if ($storedReply->wasRecentlyCreated) {
+                $totalNew++;
+
+                if (!$isFullSync && $this->shouldAnalyzeComment($account, $storedReply)) {
+                    AnalyzeWithOllama::dispatch($storedReply);
+                }
+            }
+        }
+
+        return $totalNew;
     }
 
     public function getVideos(SocialAccount $account, string $accessToken): array
@@ -568,5 +621,30 @@ class YoutubeService
         $commentAuthorChannelId = data_get($comment, 'snippet.authorChannelId.value');
 
         return $commentAuthorChannelId === $channelId;
+    }
+
+    private function shouldAnalyzeComment(
+        SocialAccount $account,
+        SocialComment $comment
+    ): bool {
+        if (!$comment->wasRecentlyCreated) {
+            return false;
+        }
+
+        if ($comment->is_own_comment) {
+            return false;
+        }
+
+        if (!$account->auto_reply_started_at) {
+            return false;
+        }
+
+        if (!$comment->commented_at) {
+            return false;
+        }
+
+        return $comment->commented_at->gte(
+            $account->auto_reply_started_at
+        );
     }
 }
