@@ -25,7 +25,7 @@ class FacebookService
      * Historical/full sync:
      * - Store everything
      * - Do NOT trigger Ollama
- *
+     *
      * Normal sync:
      * - Store new comments
      * - Analyze only comments after auto_reply_started_at
@@ -805,7 +805,7 @@ class FacebookService
          */
         $isOwnComment = $fromId
             ? (string) $fromId ===
-                (string) $account->platform_account_id
+            (string) $account->platform_account_id
             : false;
 
         $storedComment =
@@ -850,13 +850,13 @@ class FacebookService
 
                     'direction' =>
                         $isOwnComment
-                            ? 'outbound'
-                            : 'inbound',
+                        ? 'outbound'
+                        : 'inbound',
 
                     'sender_type' =>
                         $isOwnComment
-                            ? 'page'
-                            : 'customer',
+                        ? 'page'
+                        : 'customer',
 
                     'is_own_comment' =>
                         $isOwnComment,
@@ -866,12 +866,12 @@ class FacebookService
 
                     'commented_at' =>
                         isset($value['created_time'])
-                            ? Carbon::parse(
-                                $value['created_time']
-                            )->setTimezone(
+                        ? Carbon::parse(
+                            $value['created_time']
+                        )->setTimezone(
                                 config('app.timezone')
                             )
-                            : now(),
+                        : now(),
                 ]
             );
 
@@ -907,8 +907,8 @@ class FacebookService
                     'id',
                     $storedComment->root_id
                 )->increment(
-                    'reply_count'
-                );
+                        'reply_count'
+                    );
             }
         }
 
@@ -982,6 +982,9 @@ class FacebookService
 
                     'comment' =>
                         $comment,
+
+                    'fallback_reason' =>
+                        'no_from_id_in_api_response',
                 ]
             );
         }
@@ -1035,7 +1038,7 @@ class FacebookService
          */
         $isOwnComment = $fromId
             ? (string) $fromId ===
-                (string) $account->platform_account_id
+            (string) $account->platform_account_id
             : false;
 
         /*
@@ -1083,13 +1086,13 @@ class FacebookService
 
                     'direction' =>
                         $isOwnComment
-                            ? 'outbound'
-                            : 'inbound',
+                        ? 'outbound'
+                        : 'inbound',
 
                     'sender_type' =>
                         $isOwnComment
-                            ? 'page'
-                            : 'customer',
+                        ? 'page'
+                        : 'customer',
 
                     'is_own_comment' =>
                         $isOwnComment,
@@ -1099,19 +1102,19 @@ class FacebookService
 
                     'commented_at' =>
                         isset(
+                        $comment['created_time']
+                    )
+                        ? Carbon::parse(
                             $comment['created_time']
-                        )
-                            ? Carbon::parse(
-                                $comment['created_time']
-                            )->setTimezone(
+                        )->setTimezone(
                                 config('app.timezone')
                             )
-                            : now(),
+                        : now(),
 
                     'status' =>
                         $isOwnComment
-                            ? 'sent'
-                            : 'new',
+                        ? 'sent'
+                        : 'new',
                 ]
             );
 
@@ -1147,8 +1150,8 @@ class FacebookService
                     'id',
                     $storedComment->root_id
                 )->increment(
-                    'reply_count'
-                );
+                        'reply_count'
+                    );
             }
         }
 
@@ -1247,10 +1250,10 @@ class FacebookService
 
                     'posted_at' =>
                         isset($value['created_time'])
-                            ? Carbon::parse(
-                                $value['created_time']
-                            )
-                            : now(),
+                        ? Carbon::parse(
+                            $value['created_time']
+                        )
+                        : now(),
 
                     'raw_payload' =>
                         data_get(
