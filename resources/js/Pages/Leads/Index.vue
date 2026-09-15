@@ -106,9 +106,29 @@
                 <div class="lg:col-span-3">
                     <div v-if="loading" class="text-center py-12">
                         <div
-                            class="inline-block w-8 h-8 border-4 border-slate-600 border-t-blue-500 rounded-full animate-spin"
-                        ></div>
-                        <p class="text-slate-400 mt-4">Loading leads...</p>
+                            class="inline-flex items-center gap-3 text-slate-400"
+                        >
+                            <svg
+                                class="animate-spin h-5 w-5"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                            >
+                                <circle
+                                    class="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    stroke-width="4"
+                                ></circle>
+                                <path
+                                    class="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                ></path>
+                            </svg>
+                            Loading leads...
+                        </div>
                     </div>
 
                     <div
@@ -210,43 +230,51 @@
                                 </div>
 
                                 <div class="flex flex-col items-end gap-2 ml-4">
-                                    <button
+                                    <LoadingButton
                                         v-if="lead.lead_status === 'new'"
+                                        :loading="loading.status[lead.id]"
+                                        :loading-text="'Saving...'"
+                                        base-classes="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded text-xs"
                                         @click="
                                             updateStatus(lead.id, 'contacted')
                                         "
-                                        class="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded text-xs"
                                     >
                                         Mark Contacted
-                                    </button>
-                                    <button
+                                    </LoadingButton>
+                                    <LoadingButton
                                         v-if="lead.lead_status === 'contacted'"
+                                        :loading="loading.status[lead.id]"
+                                        :loading-text="'Saving...'"
+                                        base-classes="px-3 py-1.5 bg-purple-700 hover:bg-purple-600 text-white rounded text-xs"
                                         @click="
                                             updateStatus(lead.id, 'qualified')
                                         "
-                                        class="px-3 py-1.5 bg-purple-700 hover:bg-purple-600 text-white rounded text-xs"
                                     >
                                         Mark Qualified
-                                    </button>
-                                    <button
+                                    </LoadingButton>
+                                    <LoadingButton
                                         v-if="
                                             lead.lead_status !== 'converted' &&
                                             lead.lead_status !== 'lost'
                                         "
+                                        :loading="loading.status[lead.id]"
+                                        :loading-text="'Saving...'"
+                                        base-classes="px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded text-xs"
                                         @click="
                                             updateStatus(lead.id, 'converted')
                                         "
-                                        class="px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded text-xs"
                                     >
                                         Mark Converted
-                                    </button>
-                                    <button
+                                    </LoadingButton>
+                                    <LoadingButton
                                         v-if="lead.lead_status !== 'lost'"
+                                        :loading="loading.status[lead.id]"
+                                        :loading-text="'Saving...'"
+                                        base-classes="px-3 py-1.5 bg-red-900 hover:bg-red-800 text-red-200 rounded text-xs"
                                         @click="updateStatus(lead.id, 'lost')"
-                                        class="px-3 py-1.5 bg-red-900 hover:bg-red-800 text-red-200 rounded text-xs"
                                     >
                                         Mark Lost
-                                    </button>
+                                    </LoadingButton>
                                     <a
                                         :href="`/comments/${lead.socialComment?.id}`"
                                         v-if="lead.socialComment"
@@ -289,6 +317,8 @@ import { ref, reactive, onMounted } from "vue";
 import AppLayout from "@/Layouts/AppLayout.vue";
 import axios from "axios";
 import { router } from "@inertiajs/vue3";
+import { toast } from "@/composables/useToast";
+import LoadingButton from "@/Components/LoadingButton.vue";
 
 const props = defineProps({
     leads: {
@@ -306,6 +336,7 @@ const props = defineProps({
 });
 
 const loading = ref(false);
+const loadingStatus = reactive({});
 const filters = reactive({
     status: props.filters.status || "",
     type: props.filters.type || "",
@@ -344,14 +375,21 @@ const goToPage = (page) => {
 };
 
 const updateStatus = async (leadId, status) => {
+    loadingStatus[leadId] = true;
     try {
         await axios.post(`/leads/${leadId}/update-status`, { status });
+        toast.success(`Lead marked as ${status}`);
         router.reload({ only: ["leads"] });
     } catch (error) {
+        toast.error(
+            error.response?.data?.message || "Failed to update lead status",
+        );
         console.error(
             "Failed to update lead status:",
             error.response?.data || error.message,
         );
+    } finally {
+        loadingStatus[leadId] = false;
     }
 };
 

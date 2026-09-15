@@ -5,36 +5,69 @@
 
             <div class="space-y-6">
                 <!-- API Keys -->
-                <div class="bg-slate-800 rounded-lg border border-slate-700 p-8">
+                <div
+                    class="bg-slate-800 rounded-lg border border-slate-700 p-8"
+                >
                     <h3 class="text-xl font-bold text-white mb-4">API Keys</h3>
-                    <p class="text-slate-400 mb-6">Create and manage API keys for integrations</p>
+                    <p class="text-slate-400 mb-6">
+                        Create and manage API keys for integrations
+                    </p>
 
-                    <button @click="generateKey"
-                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
+                    <LoadingButton
+                        :loading="loading.generateKey"
+                        :loading-text="'Generating...'"
+                        base-classes="bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+                        @click="generateKey"
+                    >
                         + Generate New Key
-                    </button>
+                    </LoadingButton>
 
                     <div class="mt-6 space-y-4">
-                        <div class="bg-slate-700 rounded p-4 flex justify-between items-center">
+                        <div
+                            class="bg-slate-700 rounded p-4 flex justify-between items-center"
+                        >
                             <div>
-                                <p class="font-mono text-sm text-slate-300">sk_live_xxxxxxxxxxxx</p>
-                                <p class="text-xs text-slate-500 mt-1">Created 2 days ago</p>
+                                <p class="font-mono text-sm text-slate-300">
+                                    sk_live_xxxxxxxxxxxx
+                                </p>
+                                <p class="text-xs text-slate-500 mt-1">
+                                    Created 2 days ago
+                                </p>
                             </div>
-                            <button class="text-red-400 hover:text-red-300 text-sm">Revoke</button>
+                            <LoadingButton
+                                :loading="loading.revokeKey"
+                                :loading-text="'Revoking...'"
+                                base-classes="text-red-400 hover:text-red-300 text-sm"
+                                @click="revokeKey"
+                            >
+                                Revoke
+                            </LoadingButton>
                         </div>
                     </div>
                 </div>
 
                 <!-- Webhooks -->
-                <div class="bg-slate-800 rounded-lg border border-slate-700 p-8">
+                <div
+                    class="bg-slate-800 rounded-lg border border-slate-700 p-8"
+                >
                     <h3 class="text-xl font-bold text-white mb-4">Webhooks</h3>
-                    <p class="text-slate-400 mb-6">Configure webhook endpoints for real-time events</p>
+                    <p class="text-slate-400 mb-6">
+                        Configure webhook endpoints for real-time events
+                    </p>
 
                     <div class="space-y-2 text-sm text-slate-300">
-                        <p>🔗 Endpoint: <span class="font-mono">{{ webhookUrl }}</span></p>
-                        <button @click="copyWebhook" class="text-blue-400 hover:text-blue-300">
+                        <p>
+                            🔗 Endpoint:
+                            <span class="font-mono">{{ webhookUrl }}</span>
+                        </p>
+                        <LoadingButton
+                            :loading="loading.copyWebhook"
+                            :loading-text="'Copying...'"
+                            base-classes="text-blue-400 hover:text-blue-300"
+                            @click="copyWebhook"
+                        >
                             Copy Webhook URL
-                        </button>
+                        </LoadingButton>
                     </div>
                 </div>
             </div>
@@ -43,16 +76,41 @@
 </template>
 
 <script setup>
-import AppLayout from '@/Layouts/AppLayout.vue'
+import AppLayout from "@/Layouts/AppLayout.vue";
+import { toast } from "@/composables/useToast";
+import LoadingButton from "@/Components/LoadingButton.vue";
+import { reactive } from "vue";
 
-const webhookUrl = 'https://yourdomain.com/webhooks/facebook'
+const webhookUrl = "https://yourdomain.com/webhooks/facebook";
+
+const loading = reactive({
+    generateKey: false,
+    revokeKey: false,
+    copyWebhook: false,
+});
 
 const generateKey = () => {
-    console.log('Generating new API key')
-}
+    loading.generateKey = true;
+    setTimeout(() => {
+        loading.generateKey = false;
+        toast.success("New API key generated");
+    }, 1500);
+};
+
+const revokeKey = () => {
+    loading.revokeKey = true;
+    setTimeout(() => {
+        loading.revokeKey = false;
+        toast.success("API key revoked");
+    }, 1000);
+};
 
 const copyWebhook = () => {
-    navigator.clipboard.writeText(webhookUrl)
-    console.log('Webhook URL copied!')
-}
+    loading.copyWebhook = true;
+    navigator.clipboard.writeText(webhookUrl);
+    setTimeout(() => {
+        loading.copyWebhook = false;
+        toast.success("Webhook URL copied to clipboard");
+    }, 500);
+};
 </script>

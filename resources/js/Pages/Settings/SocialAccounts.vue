@@ -1,33 +1,46 @@
 <template>
     <AppLayout>
         <div class="max-w-4xl mx-auto">
+            <!-- Header -->
             <div class="flex justify-between items-center mb-8">
                 <h1 class="text-3xl font-bold text-white">Social Accounts</h1>
                 <div class="flex gap-4">
-                    <a
+                    <LoadingButton
+                        :loading="loading.facebook"
+                        :loading-text="'Connecting...'"
+                        base-classes="bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+                        as="a"
                         :href="facebookLoginUrl"
-                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
                     >
                         + Connect Facebook
-                    </a>
-                    <a
+                    </LoadingButton>
+                    <LoadingButton
+                        :loading="loading.youtube"
+                        :loading-text="'Connecting...'"
+                        base-classes="bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium"
+                        as="a"
                         :href="youtubeLoginUrl"
-                        class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium"
                     >
                         + Connect YouTube
-                    </a>
-                    <a
+                    </LoadingButton>
+                    <LoadingButton
+                        :loading="loading.twitter"
+                        :loading-text="'Connecting...'"
+                        base-classes="bg-black hover:bg-gray-800 text-white rounded-lg font-medium"
+                        as="a"
                         :href="twitterLoginUrl"
-                        class="px-4 py-2 bg-black hover:bg-gray-800 text-white rounded-lg font-medium"
                     >
                         + Connect X
-                    </a>
-                    <a
+                    </LoadingButton>
+                    <LoadingButton
+                        :loading="loading.linkedin"
+                        :loading-text="'Connecting...'"
+                        base-classes="bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-medium"
+                        as="a"
                         :href="linkedinLoginUrl"
-                        class="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-medium"
                     >
                         + Connect LinkedIn
-                    </a>
+                    </LoadingButton>
                 </div>
             </div>
 
@@ -75,67 +88,84 @@
                         </div>
 
                         <div class="flex flex-wrap gap-2">
-                            <button
+                            <LoadingButton
+                                :loading="loading.sync[account.id]"
+                                :loading-text="'Syncing...'"
+                                base-classes="bg-amber-700 hover:bg-amber-600 text-white rounded text-sm"
                                 @click="syncNow(account.id, true)"
-                                class="px-3 py-2 bg-amber-700 hover:bg-amber-600 text-white rounded text-sm"
                             >
                                 Full Sync
-                            </button>
-                            <button
+                            </LoadingButton>
+
+                            <LoadingButton
                                 v-if="
                                     account.platform === 'facebook' ||
                                     account.platform === 'instagram'
                                 "
+                                :loading="loading.sync[account.id]"
+                                :loading-text="'Syncing...'"
+                                base-classes="bg-slate-700 hover:bg-slate-600 text-white rounded text-sm"
                                 @click="syncNow(account.id, false)"
-                                class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm"
                             >
                                 Sync Now
-                            </button>
+                            </LoadingButton>
 
                             <template v-if="account.platform === 'youtube'">
-                                <button
+                                <LoadingButton
+                                    :loading="loading.sync[account.id]"
+                                    :loading-text="'Syncing...'"
+                                    base-classes="bg-slate-700 hover:bg-slate-600 text-white rounded text-sm"
                                     @click="syncYoutube(account.id)"
-                                    class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm"
                                 >
                                     Sync Now
-                                </button>
-                                <button
-                                    @click="toggleYoutubeWebhook(account)"
-                                    class="px-3 py-2 text-white rounded text-sm"
-                                    :class="
+                                </LoadingButton>
+                                <LoadingButton
+                                    :loading="loading.webhook[account.id]"
+                                    :loading-text="'Toggling...'"
+                                    :class="[
+                                        'px-3 py-2 text-white rounded text-sm',
                                         account.metadata?.pubsub_subscribed
                                             ? 'bg-green-700 hover:bg-green-600'
-                                            : 'bg-orange-700 hover:bg-orange-600'
-                                    "
+                                            : 'bg-orange-700 hover:bg-orange-600',
+                                    ]"
+                                    @click="toggleYoutubeWebhook(account)"
                                 >
                                     {{
                                         account.metadata?.pubsub_subscribed
                                             ? "Webhook Active"
                                             : "Subscribe Webhook"
                                     }}
-                                </button>
+                                </LoadingButton>
                             </template>
 
-                            <button
+                            <LoadingButton
                                 v-if="account.platform === 'twitter'"
+                                :loading="loading.sync[account.id]"
+                                :loading-text="'Syncing...'"
+                                base-classes="bg-slate-700 hover:bg-slate-600 text-white rounded text-sm"
                                 @click="syncTwitter(account.id)"
-                                class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm"
                             >
                                 Sync Now
-                            </button>
-                            <button
+                            </LoadingButton>
+
+                            <LoadingButton
                                 v-if="account.platform === 'linkedin'"
+                                :loading="loading.sync[account.id]"
+                                :loading-text="'Syncing...'"
+                                base-classes="bg-slate-700 hover:bg-slate-600 text-white rounded text-sm"
                                 @click="syncLinkedIn(account.id)"
-                                class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm"
                             >
                                 Sync Now
-                            </button>
-                            <button
+                            </LoadingButton>
+
+                            <LoadingButton
+                                :loading="loading.disconnect[account.id]"
+                                :loading-text="'Removing...'"
+                                base-classes="bg-red-900 hover:bg-red-800 text-red-200 rounded text-sm"
                                 @click="disconnect(account.id)"
-                                class="px-3 py-2 bg-red-900 hover:bg-red-800 text-red-200 rounded text-sm"
                             >
                                 Disconnect
-                            </button>
+                            </LoadingButton>
                         </div>
                     </div>
                 </div>
@@ -169,7 +199,6 @@
                     <div>✅ YouTube (Webhook + Cron)</div>
                     <div>✅ Twitter/X (Cron polling)</div>
                     <div>✅ LinkedIn (Webhook + Cron)</div>
-                    <div>🔲 TikTok (Coming Soon)</div>
                 </div>
             </div>
         </div>
@@ -177,15 +206,27 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, reactive } from "vue";
 import AppLayout from "@/Layouts/AppLayout.vue";
 import axios from "axios";
 import { router } from "@inertiajs/vue3";
+import { toast } from "@/composables/useToast";
+import LoadingButton from "@/Components/LoadingButton.vue";
 
 const props = defineProps({
     accounts: Array,
     facebook_login_url: String,
     available_platforms: Array,
+});
+
+const loading = reactive({
+    facebook: false,
+    youtube: false,
+    twitter: false,
+    linkedin: false,
+    sync: {},
+    webhook: {},
+    disconnect: {},
 });
 
 const facebookLoginUrl = ref(props.facebook_login_url || "#");
@@ -194,20 +235,21 @@ const twitterLoginUrl = "/auth/twitter/login";
 const linkedinLoginUrl = "/auth/linkedin/login";
 
 const syncLinkedIn = async (accountId) => {
+    loading.sync[accountId] = true;
     try {
         const response = await axios.post(
             `/settings/social-accounts/${accountId}/linkedin-sync`,
         );
-        console.log(response.data.message);
+        toast.success(response.data.message || "LinkedIn synced successfully");
     } catch (error) {
-        console.error(
-            "LinkedIn sync failed:",
-            error.response?.data || error.message,
-        );
+        toast.error(error.response?.data?.message || "LinkedIn sync failed");
+    } finally {
+        loading.sync[accountId] = false;
     }
 };
 
 const syncNow = async (accountId, fullSync) => {
+    loading.sync[accountId] = true;
     try {
         const response = await axios.post(
             `/settings/social-accounts/${accountId}/sync`,
@@ -216,95 +258,89 @@ const syncNow = async (accountId, fullSync) => {
                 params: { full_sync: fullSync ? 1 : 0 },
             },
         );
-        console.log(response.data.message);
+        toast.success(
+            response.data.message ||
+                (fullSync ? "Full sync started" : "Sync completed"),
+        );
     } catch (error) {
-        console.error("Sync failed:", error.response?.data || error.message);
+        toast.error(error.response?.data?.message || "Sync failed");
+    } finally {
+        loading.sync[accountId] = false;
     }
 };
 
 const syncYoutube = async (accountId) => {
+    loading.sync[accountId] = true;
     try {
         const response = await axios.post(
             `/settings/social-accounts/${accountId}/youtube-sync`,
         );
-        console.log(response.data.message);
+        toast.success(response.data.message || "YouTube synced successfully");
     } catch (error) {
-        console.error(
-            "YouTube sync failed:",
-            error.response?.data || error.message,
-        );
+        toast.error(error.response?.data?.message || "YouTube sync failed");
+    } finally {
+        loading.sync[accountId] = false;
     }
 };
 
 const toggleYoutubeWebhook = async (account) => {
-    try {
-        if (account.metadata?.pubsub_subscribed) {
-            if (
-                !confirm(
-                    "Disable real-time webhook for this channel? Cron sync will continue.",
-                )
+    if (account.metadata?.pubsub_subscribed) {
+        if (
+            !confirm(
+                "Disable real-time webhook for this channel? Cron sync will continue.",
             )
-                return;
-            await axios.post(`/youtube/unsubscribe/${account.id}`);
-        } else {
-            const response = await axios.post(
-                `/youtube/subscribe/${account.id}`,
-            );
-            alert(
-                `Subscribed: ${response.data.subscribed}, Failed: ${response.data.failed}`,
-            );
-        }
-        router.reload();
-    } catch (error) {
-        console.error(
-            "YouTube webhook toggle failed:",
-            error.response?.data || error.message,
-        );
-        alert(`Failed: ${error.response?.data?.message || error.message}`);
+        )
+            return;
     }
-};
-
-const unsubscribeYoutubeWebhook = async (accountId) => {
-    if (
-        !confirm("Are you sure you want to unsubscribe from real-time webhook?")
-    )
-        return;
+    loading.webhook[account.id] = true;
     try {
-        await axios.post(`/youtube/unsubscribe/${accountId}`);
+        const url = account.metadata?.pubsub_subscribed
+            ? `/youtube/unsubscribe/${account.id}`
+            : `/youtube/subscribe/${account.id}`;
+        const response = await axios.post(url);
+        toast.success(
+            response.data.message ||
+                (account.metadata?.pubsub_subscribed
+                    ? "Webhook unsubscribed"
+                    : "Webhook subscribed"),
+        );
         router.reload();
     } catch (error) {
-        console.error(
-            "Unsubscribe failed:",
-            error.response?.data || error.message,
+        toast.error(
+            error.response?.data?.message || "YouTube webhook toggle failed",
         );
+    } finally {
+        loading.webhook[account.id] = false;
     }
 };
 
 const syncTwitter = async (accountId) => {
+    loading.sync[accountId] = true;
     try {
         const response = await axios.post(
             `/settings/social-accounts/${accountId}/twitter-sync`,
         );
-        console.log(response.data.message);
+        toast.success(response.data.message || "X/Twitter synced successfully");
     } catch (error) {
-        console.error("X sync failed:", error.response?.data || error.message);
+        toast.error(error.response?.data?.message || "X sync failed");
+    } finally {
+        loading.sync[accountId] = false;
     }
 };
 
 const disconnect = async (accountId) => {
-    if (confirm("Are you sure you want to disconnect this account?")) {
-        try {
-            const response = await axios.post(
-                `/settings/social-accounts/${accountId}/disconnect`,
-            );
-            console.log(response.data.message);
-            router.reload();
-        } catch (error) {
-            console.error(
-                "Disconnect failed:",
-                error.response?.data || error.message,
-            );
-        }
+    if (!confirm("Are you sure you want to disconnect this account?")) return;
+    loading.disconnect[accountId] = true;
+    try {
+        const response = await axios.post(
+            `/settings/social-accounts/${accountId}/disconnect`,
+        );
+        toast.success(response.data.message || "Account disconnected");
+        router.reload();
+    } catch (error) {
+        toast.error(error.response?.data?.message || "Disconnect failed");
+    } finally {
+        loading.disconnect[accountId] = false;
     }
 };
 
