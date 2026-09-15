@@ -114,24 +114,36 @@ class YoutubeService
 
         $totalNew = 0;
 
-        // Full sync = no cursor, fetch everything. Normal sync = use sinceId.
+        // Full sync = no cursor, fetch everything. Normal sync = use per-video cursor.
         $sinceId = $isFullSync
             ? null
-            : ($account->metadata['last_synced_comment_id'] ?? null);
+            : ($account->metadata['youtube_cursors'][$videoId] ?? null);
 
         $threads = $this->getCommentThreads($accessToken, $videoId, $sinceId, $commentWindowDays, $isFullSync);
+
+        $newestId = $sinceId;
 
         foreach ($threads as $thread) {
             $topLevelCommentId = data_get($thread, 'id');
             $totalNew += $this->processCommentThread($account, $storedPost, $thread, $topLevelCommentId, $isFullSync);
 
             if ($topLevelCommentId && !$isFullSync) {
-                $account->update([
-                    'metadata' => array_merge($account->metadata ?? [], [
-                        'last_synced_comment_id' => $topLevelCommentId,
-                    ]),
-                ]);
+                // Track the newest ID seen for THIS video
+                if ($newestId === null || strcmp($topLevelCommentId, $newestId) > 0) {
+                    $newestId = $topLevelCommentId;
+                }
             }
+        }
+
+        // Save cursor ONCE per video after all threads processed
+        if ($newestId && !$isFullSync && $newestId !== $sinceId) {
+            $metadata = $account->metadata ?? [];
+            $metadata['youtube_cursors'] = $metadata['youtube_cursors'] ?? [];
+            $metadata['youtube_cursors'][$videoId] = $newestId;
+
+            $account->update([
+                'metadata' => $metadata,
+            ]);
         }
 
         return $totalNew;

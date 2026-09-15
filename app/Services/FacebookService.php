@@ -972,9 +972,6 @@ class FacebookService
                 'Unknown'
             );
 
-        \Log::info($fromName);
-        \Log::info($fromId);
-
         if (!$fromId) {
 
             Log::warning(
