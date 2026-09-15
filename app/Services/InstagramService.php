@@ -457,7 +457,7 @@ class InstagramService
 
                     'sender_type' =>
                         $isOwnComment
-                            ? 'own'
+                            ? 'page'
                             : 'customer',
 
                     'is_own_comment' =>
@@ -1017,7 +1017,7 @@ class InstagramService
 
                     'sender_type' =>
                         $isOwnComment
-                            ? 'own'
+                            ? 'page'
                             : 'customer',
 
                     'is_own_comment' =>
