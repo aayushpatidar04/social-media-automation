@@ -1,1 +1,0 @@
-import{L as e,N as t,j as n,k as r,n as i,v as a}from"./app-CICcR_Fb.js";var o={__name:`Link`,props:{href:{type:String,required:!0},as:{type:String,default:`a`}},setup(o){return(s,c)=>(r(),a(e(i),{href:o.href,as:o.as,class:`text-blue-400 hover:text-blue-300 transition-colors`},{default:t(()=>[n(s.$slots,`default`)]),_:3},8,[`href`,`as`]))}};export{o as t};
