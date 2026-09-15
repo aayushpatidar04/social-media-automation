@@ -972,6 +972,9 @@ class FacebookService
                 'Unknown'
             );
 
+        \Log::info($fromName);
+        \Log::info($fromId);
+
         if (!$fromId) {
 
             Log::warning(
@@ -987,6 +990,26 @@ class FacebookService
                         'no_from_id_in_api_response',
                 ]
             );
+
+            /*
+             * Heuristic: if this is a reply and the author
+             * name matches our page, it is our own comment.
+             */
+            if (
+                $parentComment &&
+                stripos($fromName, $account->platform_account_name) !== false
+            ) {
+                $fromId = (string) $account->platform_account_id;
+            }
+
+            /*
+             * Last resort: stable string so the DB column
+             * is never NULL. Using comment ID suffix keeps
+             * it unique per comment.
+             */
+            if (!$fromId) {
+                $fromId = 'unknown_' . $commentId;
+            }
         }
 
         /*
