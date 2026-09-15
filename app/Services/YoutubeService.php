@@ -59,7 +59,7 @@ class YoutubeService
         $postWindowDays = $options['post_window_days'] ?? 30;
         $commentWindowDays = $options['comment_window_days'] ?? 7;
 
-        $postCutoff = now()->subDays($postWindowDays);
+        $postCutoff = $postWindowDays > 0 ? now()->subDays($postWindowDays) : null;
         $totalNew = 0;
         $skippedOldPosts = 0;
 
@@ -73,10 +73,12 @@ class YoutubeService
             }
 
             // Skip videos older than the post window — they exist in DB, no recheck needed
-            $publishedAt = data_get($video, 'snippet.publishedAt');
-            if ($publishedAt && Carbon::parse($publishedAt)->lt($postCutoff)) {
-                $skippedOldPosts++;
-                continue;
+            if ($postCutoff) {
+                $publishedAt = data_get($video, 'snippet.publishedAt');
+                if ($publishedAt && Carbon::parse($publishedAt)->lt($postCutoff)) {
+                    $skippedOldPosts++;
+                    continue;
+                }
             }
 
             $totalNew += $this->syncNewCommentsForVideo($account, $videoId, $accessToken, $commentWindowDays);
