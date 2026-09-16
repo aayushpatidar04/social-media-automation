@@ -362,7 +362,7 @@
             <ReplyModal
                 v-if="replyingTo"
                 :comment="replyingTo"
-                @close="replyingTo = null"
+                @close="() => { replyingTo = null; replyingToId = null }"
                 @sent="handleReplySent"
             />
         </div>
