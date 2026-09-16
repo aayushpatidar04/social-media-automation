@@ -252,7 +252,7 @@ class YoutubeService
     {
         $cacheKey = "youtube_videos_account_{$account->id}";
 
-        return Cache::remember($cacheKey, now()->addHours(6), function () use ($accessToken) {
+        return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($accessToken) {
             return $this->fetchVideosFromApi($accessToken);
         });
     }
@@ -629,40 +629,40 @@ class YoutubeService
     }
 
     public function publishReply(SocialComment $comment, string $message, SocialAccount $account): array
-{
- $accessToken = $this->validToken($account);
+    {
+        $accessToken = $this->validToken($account);
 
-  // YouTube replies go to the parent comment thread
- $parentId = $comment->platform_parent_id ?: $comment->platform_comment_id;
+        // YouTube replies go to the parent comment thread
+        $parentId = $comment->platform_parent_id ?: $comment->platform_comment_id;
 
- $response = Http::withToken($accessToken)->post(
- "{$this->baseUrl}/comments?part=snippet",
-  [
- 'snippet' => [
- 'parentId' => $parentId,
- 'textOriginal' => $message,
- ],
-  ]
- );
+        $response = Http::withToken($accessToken)->post(
+            "{$this->baseUrl}/comments?part=snippet",
+            [
+                'snippet' => [
+                    'parentId' => $parentId,
+                    'textOriginal' => $message,
+                ],
+            ]
+        );
 
-  if (!$response->successful()) {
- Log::error('YouTube reply publish failed', [
- 'comment_id' => $comment->id,
-  'parent_id' => $parentId,
-  'status' => $response->status(),
- 'body' => $response->body(),
-  ]);
+        if (!$response->successful()) {
+            Log::error('YouTube reply publish failed', [
+                'comment_id' => $comment->id,
+                'parent_id' => $parentId,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
 
- throw new \Exception(
- $response->json('error.message') ?? 'YouTube reply failed'
- );
-  }
+            throw new \Exception(
+                $response->json('error.message') ?? 'YouTube reply failed'
+            );
+        }
 
- $replyData = $response->json('snippet', []);
+        $replyData = $response->json('snippet', []);
 
- return [
- 'id' => $response->json('id'),
- 'url' => null,
-  ];
-}
+        return [
+            'id' => $response->json('id'),
+            'url' => null,
+        ];
+    }
 }
