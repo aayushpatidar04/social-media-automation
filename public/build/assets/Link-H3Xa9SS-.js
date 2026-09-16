@@ -1,0 +1,1 @@
+import{A as e,F as t,M as n,n as r,v as i,z as a}from"./app-gCIa-oD4.js";var o={__name:`Link`,props:{href:{type:String,required:!0},as:{type:String,default:`a`}},setup(o){return(s,c)=>(e(),i(a(r),{href:o.href,as:o.as,class:`text-blue-400 hover:text-blue-300 transition-colors`},{default:t(()=>[n(s.$slots,`default`)]),_:3},8,[`href`,`as`]))}};export{o as t};
