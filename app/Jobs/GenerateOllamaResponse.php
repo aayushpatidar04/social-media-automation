@@ -31,7 +31,6 @@ class GenerateOllamaResponse implements ShouldQueue
     public function handle()
     {
         try {
-            Log::info('Generating AI response for comment: ' . $this->comment->id);
 
             $account = $this->comment->socialAccount;
 
@@ -40,20 +39,14 @@ class GenerateOllamaResponse implements ShouldQueue
             // so it correctly handles comments from any time period as long as
             // they came in after auto-reply was enabled
             if (!$account || !$account->auto_reply_started_at) {
-                Log::info('Auto-reply not started for this account, skipping');
                 return;
             }
 
             if (!$this->comment->commented_at || $this->comment->commented_at->lt($account->auto_reply_started_at)) {
-                Log::info('Comment is before auto-reply started, skipping', [
-                    'commented_at' => $this->comment->commented_at,
-                    'auto_reply_started_at' => $account->auto_reply_started_at,
-                ]);
                 return;
             }
 
             if ($this->comment->is_own_comment) {
-                Log::info('Own comment, skipping AI response');
                 return;
             }
 
@@ -76,8 +69,6 @@ class GenerateOllamaResponse implements ShouldQueue
                 return;
             }
 
-            Log::info('Generated response: ' . substr($response, 0, 100));
-
             $aiConversation = AiConversation::create([
                 'original_comment' => $this->comment->content,
                 'social_comment_id' => $this->comment->id,
@@ -88,17 +79,11 @@ class GenerateOllamaResponse implements ShouldQueue
                 'model_used' => 'ollama_gemma2',
             ]);
 
-            Log::info('AI conversation stored: ' . $aiConversation->id);
-
             $this->comment->update([
                 'ai_response_text' => $response,
             ]);
 
-            Log::info('Comment updated with AI response text');
-
             PublishAutoReply::dispatch($this->comment);
-
-            Log::info('Auto reply dispatch queued for comment: ' . $this->comment->id);
 
         } catch (\Exception $e) {
             Log::error('Error generating response: ' . $e->getMessage());

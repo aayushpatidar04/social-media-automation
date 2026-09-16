@@ -114,8 +114,6 @@ class PublishAutoReply implements ShouldQueue
                 'replied_at' => now(),
             ]);
 
-            Log::info("Auto reply sent for comment {$this->comment->id}");
-
         } catch (\Exception $e) {
             Log::error("Publish Reply Error: " . $e->getMessage());
 

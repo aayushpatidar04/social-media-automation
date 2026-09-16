@@ -59,14 +59,6 @@ class SyncSocialCommentsJob implements ShouldQueue
             ]);
         }
 
-        Log::info('Sync started', [
-            'account_id' => $account->id,
-            'platform' => $account->platform,
-            'full_sync' => $this->fullSync,
-            'post_window_days' => $options['post_window_days'],
-            'comment_window_days' => $options['comment_window_days'],
-        ]);
-
         try {
             $newComments = match ($account->platform) {
                 'youtube' => $youTubeService->syncComments($account, $options),
@@ -78,12 +70,6 @@ class SyncSocialCommentsJob implements ShouldQueue
             };
 
             $account->update(['last_synced_at' => now()]);
-
-            Log::info('Sync completed', [
-                'account_id' => $account->id,
-                'platform' => $account->platform,
-                'new_comments' => $newComments,
-            ]);
 
         } catch (\Exception $e) {
             Log::error('Sync failed', [

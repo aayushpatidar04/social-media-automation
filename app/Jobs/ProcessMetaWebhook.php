@@ -27,7 +27,6 @@ class ProcessMetaWebhook implements ShouldQueue
 
     public function handle()
     {
-        Log::info('Processing Meta webhook', $this->payload);
 
         foreach ($this->payload['entry'] ?? [] as $entry) {
             foreach ($entry['changes'] ?? [] as $change) {
@@ -89,10 +88,6 @@ class ProcessMetaWebhook implements ShouldQueue
             return;
         }
 
-        Log::info('Unhandled Facebook feed item', [
-            'page_id' => $pageId,
-            'item' => $item,
-        ]);
     }
 
     private function handleFacebookFeedRemove(array $entry, array $value): void
@@ -120,7 +115,6 @@ class ProcessMetaWebhook implements ShouldQueue
             $commentId = $value['comment_id'] ?? null;
 
             if ($commentId) {
-                Log::info('Facebook comment deleted', ['comment_id' => $commentId]);
                 $this->cascadeDeleteComment('facebook', $commentId);
             }
         }
@@ -129,7 +123,6 @@ class ProcessMetaWebhook implements ShouldQueue
             $postId = $value['post_id'] ?? $value['id'] ?? null;
 
             if ($postId) {
-                Log::info('Facebook post deleted', ['post_id' => $postId]);
                 $this->cascadeDeletePost('facebook', $postId);
             }
         }
@@ -205,7 +198,6 @@ class ProcessMetaWebhook implements ShouldQueue
             return;
         }
 
-        Log::info('Instagram comment deleted', ['comment_id' => $commentId]);
         $this->cascadeDeleteComment('instagram', $commentId);
     }
 

@@ -24,8 +24,6 @@ class RAGService
     public function retrieve(string $query, int $organizationId, int $topK = 3): array
     {
         try {
-            Log::info('Retrieving knowledge for query: ' . substr($query, 0, 50) . '...');
-
             // Generate embedding for query
             $queryEmbedding = $this->embeddingService->embed($query);
 
@@ -38,8 +36,6 @@ class RAGService
             $chunks = KnowledgeChunk::where('organization_id', $organizationId)
                 ->with('knowledgeSource')
                 ->get();
-
-            Log::info('Searching through ' . $chunks->count() . ' chunks');
 
             // Calculate similarity for each chunk
             $results = [];
@@ -74,8 +70,6 @@ class RAGService
 
             // Return top K results
             $topResults = array_slice($results, 0, $topK);
-
-            Log::info('Retrieved ' . count($topResults) . ' relevant chunks');
 
             return $topResults;
 
@@ -130,8 +124,6 @@ class RAGService
     public function reindexOrganization(int $organizationId): int
     {
         try {
-            Log::info('Reindexing knowledge for organization: ' . $organizationId);
-
             $chunks = KnowledgeChunk::where('organization_id', $organizationId)->get();
             $count = 0;
 
@@ -146,7 +138,6 @@ class RAGService
                 }
             }
 
-            Log::info('Reindexed ' . $count . ' chunks');
             return $count;
 
         } catch (\Exception $e) {

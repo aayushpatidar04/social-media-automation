@@ -57,20 +57,6 @@ class InstagramService
 
         $totalComments = 0;
 
-        Log::info(
-            'Starting Instagram sync',
-            [
-                'account_id' =>
-                    $account->id,
-
-                'instagram_id' =>
-                    $account->platform_account_id,
-
-                'full_sync' =>
-                    $isFullSync,
-            ]
-        );
-
         /*
          * Get Instagram media.
          */
@@ -240,20 +226,6 @@ class InstagramService
         $account->update([
             'last_synced_at' => now(),
         ]);
-
-        Log::info(
-            'Instagram sync completed',
-            [
-                'account_id' =>
-                    $account->id,
-
-                'total_comments' =>
-                    $totalComments,
-
-                'full_sync' =>
-                    $isFullSync,
-            ]
-        );
 
         return $totalComments;
     }
@@ -657,23 +629,6 @@ class InstagramService
                         $account->access_token,
                 ]
             );
-
-        Log::info(
-            'Instagram Media Response',
-            [
-                'account_id' =>
-                    $account->id,
-
-                'instagram_id' =>
-                    $account->platform_account_id,
-
-                'status' =>
-                    $response->status(),
-
-                'body' =>
-                    $response->body(),
-            ]
-        );
 
         $data =
             $response->json();

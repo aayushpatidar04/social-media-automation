@@ -49,8 +49,6 @@ class AnalyzeWithOllama implements ShouldQueue
                 'lead_score' => $leadAnalysis['lead_score'],
             ];
 
-            Log::info('Analysis complete', $analysis);
-
             // Update comment with analysis results
             $this->comment->update([
                 'sentiment' => $analysis['sentiment'],
@@ -64,14 +62,8 @@ class AnalyzeWithOllama implements ShouldQueue
                 'ai_analysis_completed_at' => now(),
             ]);
 
-            Log::info('Comment updated with analysis: ' . $this->comment->id);
-
             // If it's a potential lead or support request, create Lead record
             if ($analysis['is_lead'] || $analysis['intent'] === 'sales' || $analysis['intent'] === 'support') {
-                Log::info('Priority comment detected - lead/sales/support', [
-                    'comment_id' => $this->comment->id,
-                    'analysis' => $analysis,
-                ]);
 
                 $this->createOrUpdateLead($analysis);
             }
@@ -103,8 +95,6 @@ class AnalyzeWithOllama implements ShouldQueue
                 'lead_score' => $analysis['lead_score'],
                 'lead_status' => $existingLead->lead_status === 'new' ? 'new' : $existingLead->lead_status,
             ]);
-
-            Log::info('Lead updated: ' . $existingLead->id);
             return;
         }
 
@@ -125,7 +115,5 @@ class AnalyzeWithOllama implements ShouldQueue
             'lead_score' => $analysis['lead_score'],
             'lead_status' => 'new',
         ]);
-
-        Log::info('Lead created for comment: ' . $this->comment->id);
     }
 }

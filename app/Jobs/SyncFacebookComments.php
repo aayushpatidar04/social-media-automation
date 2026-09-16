@@ -28,12 +28,9 @@ class SyncFacebookComments implements ShouldQueue
     public function handle()
     {
         try {
-            Log::info('Starting sync job for account: ' . $this->account->platform_account_name . ' (full_sync: ' . ($this->fullSync ? 'yes' : 'no') . ')');
 
             $service = new FacebookService();
             $commentCount = $service->syncPageComments($this->account, $this->options);
-
-            Log::info('Sync job completed. Comments synced: ' . $commentCount);
 
             \App\Models\ActivityLog::create([
                 'organization_id' => $this->account->organization_id,

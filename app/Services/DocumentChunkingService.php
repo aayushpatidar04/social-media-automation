@@ -27,8 +27,6 @@ class DocumentChunkingService
         try {
             $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
 
-            Log::info('Extracting text from: ' . $filePath . ' (' . $extension . ')');
-
             return match ($extension) {
                 'pdf' => $this->extractFromPDF($filePath),
                 'txt' => $this->extractFromTXT($filePath),
@@ -59,7 +57,6 @@ class DocumentChunkingService
                 $text .= $page->getText();
             }
 
-            Log::info('Extracted ' . strlen($text) . ' characters from PDF');
             return $text;
 
         } catch (\Exception $e) {
@@ -75,7 +72,6 @@ class DocumentChunkingService
     {
         try {
             $text = Storage::get($filePath);
-            Log::info('Extracted ' . strlen($text) . ' characters from TXT');
             return $text;
 
         } catch (\Exception $e) {
@@ -113,8 +109,6 @@ class DocumentChunkingService
             foreach ($dom->getElementsByTagName('t') as $node) {
                 $text .= $node->textContent . ' ';
             }
-
-            Log::info('Extracted ' . strlen($text) . ' characters from DOCX');
             return $text;
 
         } catch (\Exception $e) {
@@ -138,7 +132,6 @@ class DocumentChunkingService
 
             // Convert JSON to readable text
             $text = json_encode($json, JSON_PRETTY_PRINT);
-            Log::info('Extracted ' . strlen($text) . ' characters from JSON');
             return $text;
 
         } catch (\Exception $e) {
@@ -153,7 +146,6 @@ class DocumentChunkingService
     public function chunkText(string $text): array
     {
         try {
-            Log::info('Chunking text. Size: ' . strlen($text) . ' chars, Chunk size: ' . $this->chunkSize);
 
             // Split by paragraphs first
             $paragraphs = preg_split('/\n\n+/', $text);
@@ -196,8 +188,6 @@ class DocumentChunkingService
                     'tokens' => $currentTokens,
                 ];
             }
-
-            Log::info('Created ' . count($chunks) . ' chunks');
             return $chunks;
 
         } catch (\Exception $e) {

@@ -24,11 +24,8 @@ class SyncYoutubeComments implements ShouldQueue
 
     public function handle(YoutubeService $youtube): void
     {
-        Log::info('Starting YouTube sync for account: ' . $this->account->platform_account_name . ' (full_sync: ' . ($this->fullSync ? 'yes' : 'no') . ')');
 
         $count = $youtube->syncComments($this->account, $this->options);
-
-        Log::info('YouTube sync completed. Comments synced: ' . $count);
 
         \App\Models\ActivityLog::create([
             'organization_id' => $this->account->organization_id,

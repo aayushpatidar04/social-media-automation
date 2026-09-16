@@ -41,14 +41,6 @@ class FacebookService
                 $options['comment_window_days'] ?? 7
             );
 
-            Log::info(
-                'Starting sync for account: '
-                . $account->platform_account_name
-                . ' (full_sync: '
-                . ($fullSync ? 'yes' : 'no')
-                . ')'
-            );
-
             /*
              * Full sync:
              *     beginning of Unix time
@@ -68,10 +60,6 @@ class FacebookService
              * Fetch Page posts.
              */
             $posts = $this->getPagePosts($account);
-
-            Log::info(
-                'Found ' . count($posts) . ' posts'
-            );
 
             foreach ($posts as $post) {
 
@@ -227,12 +215,6 @@ class FacebookService
                 $options
             );
 
-            Log::info('Facebook sync completed', [
-                'account_id' => $account->id,
-                'total_comments' => $totalComments,
-                'full_sync' => $fullSync,
-            ]);
-
             return $totalComments;
 
         } catch (\Throwable $e) {
@@ -265,14 +247,6 @@ class FacebookService
                 );
 
             if (!$igAccountId) {
-
-                Log::info(
-                    'No linked Instagram account found for Facebook page',
-                    [
-                        'account_id' => $facebookAccount->id,
-                    ]
-                );
-
                 return;
             }
 
@@ -343,15 +317,6 @@ class FacebookService
                     ],
                 ]);
 
-                Log::info(
-                    'Created Instagram account linked to Facebook page',
-                    [
-                        'instagram_id' => $igAccount->id,
-                        'facebook_id' => $facebookAccount->id,
-                        'ig_business_id' => $igAccountId,
-                    ]
-                );
-
             } else {
 
                 /*
@@ -393,17 +358,6 @@ class FacebookService
                     $igAccount,
                     $igOptions
                 );
-
-            Log::info(
-                'Instagram sync completed (via Facebook link)',
-                [
-                    'instagram_id' => $igAccount->id,
-                    'new_comments' => $igCount,
-                    'linked_to_facebook' =>
-                        $facebookAccount->id,
-                ]
-            );
-
         } catch (\Throwable $e) {
 
             /*
@@ -463,24 +417,8 @@ class FacebookService
             !$igData ||
             !isset($igData['id'])
         ) {
-
-            Log::info(
-                'No Instagram Business account linked to this Facebook page',
-                [
-                    'account_id' => $account->id,
-                ]
-            );
-
             return null;
         }
-
-        Log::info(
-            'Found linked Instagram Business account',
-            [
-                'facebook_id' => $account->id,
-                'ig_business_id' => $igData['id'],
-            ]
-        );
 
         return (string) $igData['id'];
     }
@@ -1283,20 +1221,6 @@ class FacebookService
                         ),
                 ]
             );
-
-        Log::info(
-            'Facebook webhook post synced',
-            [
-                'post_id' =>
-                    $storedPost->id,
-
-                'platform_post_id' =>
-                    $postId,
-
-                'item' =>
-                    $value['item'] ?? null,
-            ]
-        );
 
         return $storedPost;
     }

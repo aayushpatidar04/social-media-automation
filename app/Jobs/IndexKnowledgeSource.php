@@ -68,11 +68,6 @@ class IndexKnowledgeSource implements ShouldQueue
                 'is_indexed' => true,
                 'indexed_at' => now(),
             ]);
-
-            Log::info('Knowledge source indexed', [
-                'source_id' => $source->id,
-                'chunks' => count($chunks),
-            ]);
         } catch (\Throwable $e) {
             Log::error('Knowledge indexing failed', [
                 'source_id' => $source->id,

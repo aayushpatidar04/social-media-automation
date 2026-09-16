@@ -66,7 +66,6 @@ class ProcessLinkedInWebhook implements ShouldQueue
 
     private function handleCommentDeleted(string $entity): void
     {
-        Log::info('LinkedIn comment deleted', ['entity' => $entity]);
 
         // Extract comment URN from entity
         $commentUrn = $this->event['comment']['id'] ?? $entity;
@@ -97,15 +96,10 @@ class ProcessLinkedInWebhook implements ShouldQueue
         }
 
         $comment->update(['deleted_at' => now()]);
-
-        Log::info('LinkedIn: cascade deleted comment', [
-            'comment_id' => $comment->id,
-            'comment_urn' => $commentUrn,
-        ]);
     }
 
     private function handleSocialActionCreated(string $entity): void
     {
-        Log::info('LinkedIn social action created (like/share)', ['entity' => $entity]);
+        
     }
 }

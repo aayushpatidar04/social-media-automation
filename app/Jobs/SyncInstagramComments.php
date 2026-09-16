@@ -34,9 +34,6 @@ class SyncInstagramComments implements ShouldQueue
             $this->options
         );
 
-        Log::info('Instagram sync completed for account: ' . $this->account->platform_account_name . ' (full_sync: ' . ($this->fullSync ? 'yes' : 'no') . ')');
-        Log::info('Instagram comments synced: ' . $count);
-
         \App\Models\ActivityLog::create([
             'organization_id' => $this->account->organization_id,
             'user_id' => $this->account->user_id,

@@ -28,16 +28,12 @@ class OllamaService
     public function analyzeComment(SocialComment $comment): array
     {
         try {
-            Log::info('Analyzing comment: ' . $comment->id . ' with Ollama');
-
             $prompt = $this->buildAnalysisPrompt($comment->content);
 
             $response = $this->callOllama($prompt);
 
             // Parse the response
             $analysis = $this->parseAnalysisResponse($response, $comment->content);
-
-            Log::info('Analysis complete for comment: ' . $comment->id, $analysis);
 
             return $analysis;
 
@@ -53,7 +49,6 @@ class OllamaService
     public function generateResponse(SocialComment $comment, array $context = []): string
     {
         try {
-            Log::info('Generating response for comment: ' . $comment->id);
 
             $prompt = $this->buildResponsePrompt(
                 commentContent: $comment->content,
@@ -62,8 +57,6 @@ class OllamaService
             );
 
             $response = $this->callOllama($prompt);
-
-            Log::info('Response generated: ' . substr($response, 0, 100));
 
             return trim($response);
 
@@ -245,7 +238,6 @@ PROMPT;
     private function callOllama(string $prompt): string
     {
         try {
-            Log::info('Calling Ollama at: ' . $this->ollamaUrl);
 
             $payload = [
                 'model' => $this->model,

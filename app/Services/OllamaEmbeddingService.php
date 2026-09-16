@@ -27,8 +27,6 @@ class OllamaEmbeddingService
     public function embed(string $text): array
     {
         try {
-            Log::info('Generating embedding for text: ' . substr($text, 0, 50) . '...');
-
             $vector = $this->callOllamaEmbedding($text);
 
             if (empty($vector)) {
@@ -36,7 +34,6 @@ class OllamaEmbeddingService
                 return [];
             }
 
-            Log::info('Generated embedding with ' . count($vector) . ' dimensions');
             return $vector;
 
         } catch (\Exception $e) {
@@ -77,15 +74,12 @@ class OllamaEmbeddingService
     public function batchEmbed(array $texts): array
     {
         try {
-            Log::info('Batch embedding ' . count($texts) . ' texts');
-
             $embeddings = [];
             foreach ($texts as $index => $text) {
                 Log::debug('Embedding text ' . ($index + 1) . '/' . count($texts));
                 $embeddings[] = $this->embed($text);
             }
 
-            Log::info('Batch embedding complete');
             return $embeddings;
 
         } catch (\Exception $e) {
@@ -205,8 +199,6 @@ class OllamaEmbeddingService
     public function pullModel(): bool
     {
         try {
-            Log::info('Pulling embedding model: ' . $this->model);
-
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, $this->ollamaUrl . '/api/pull');
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -242,8 +234,6 @@ class OllamaEmbeddingService
     public function test(): bool
     {
         try {
-            Log::info('Testing embedding service');
-
             $testText = 'This is a test embedding.';
             $embedding = $this->embed($testText);
 
@@ -251,8 +241,6 @@ class OllamaEmbeddingService
                 Log::error('Test failed: empty embedding');
                 return false;
             }
-
-            Log::info('Test successful. Embedding dimensions: ' . count($embedding));
             return true;
 
         } catch (\Exception $e) {

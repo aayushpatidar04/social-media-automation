@@ -26,10 +26,6 @@ class LinkedInWebhookController extends Controller
 
         // LinkedIn verification challenge
         if (isset($payload['verificationCode']) && isset($payload['status'])) {
-            Log::info('LinkedIn webhook verification received', [
-                'verification_code' => $payload['verificationCode'],
-                'status' => $payload['status'],
-            ]);
 
             return response()->json([
                 'verificationCode' => $payload['verificationCode'],
@@ -39,7 +35,6 @@ class LinkedInWebhookController extends Controller
 
         // Actual event
         if (isset($payload['eventType'])) {
-            Log::info('LinkedIn webhook event received', $payload);
             ProcessLinkedInWebhook::dispatch($payload);
         }
 

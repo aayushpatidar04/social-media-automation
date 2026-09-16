@@ -75,12 +75,6 @@ class YoutubeService
             $totalNew += $this->syncNewCommentsForVideo($account, $videoId, $accessToken, $commentWindowDays, $isFullSync);
         }
 
-        Log::info('YouTube sync', [
-            'account_id' => $account->id,
-            'new_comments' => $totalNew,
-            'videos_checked' => count($videos),
-        ]);
-
         $account->update(['last_synced_at' => now()]);
 
         return $totalNew;

@@ -102,13 +102,6 @@ class TwitterService
             });
         }
 
-        Log::info('X mentions response', [
-            'status' => $response->status(),
-            'since_id' => $sinceId,
-            'count' => count($data['data'] ?? []),
-            'full_sync' => $isFullSync,
-        ]);
-
         if (!$response->successful()) {
             throw new \Exception($data['detail'] ?? $data['title'] ?? 'Unable to fetch X mentions.');
         }
@@ -182,12 +175,6 @@ class TwitterService
 
         $account->update(['last_synced_at' => now()]);
 
-        Log::info('X sync completed', [
-            'account_id' => $account->id,
-            'new_comments' => $total,
-            'full_sync' => $isFullSync,
-        ]);
-
         return $total;
     }
 
@@ -203,11 +190,6 @@ class TwitterService
         ]);
 
         $data = $response->json();
-
-        Log::info('X reply response', [
-            'status' => $response->status(),
-            'body' => $response->body(),
-        ]);
 
         if (!$response->successful()) {
             throw new \Exception($data['detail'] ?? $data['title'] ?? 'Unable to reply on X.');

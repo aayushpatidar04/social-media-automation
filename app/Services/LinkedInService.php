@@ -131,12 +131,6 @@ class LinkedInService
 
         $account->update(['last_synced_at' => now()]);
 
-        Log::info('LinkedIn sync completed', [
-            'account_id' => $account->id,
-            'total_comments' => $totalComments,
-            'full_sync' => $isFullSync,
-        ]);
-
         return $totalComments;
     }
 

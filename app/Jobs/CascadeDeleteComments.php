@@ -44,12 +44,6 @@ trait CascadeDeleteComments
 
         // Soft-delete the comment itself
         $comment->update(['deleted_at' => now()]);
-
-        Log::info('Cascade deleted comment', [
-            'platform' => $platform,
-            'comment_id' => $comment->id,
-            'platform_comment_id' => $platformCommentId,
-        ]);
     }
 
     /**
@@ -70,10 +64,5 @@ trait CascadeDeleteComments
                 $q->where('platform_post_id', $platformPostId);
             })
             ->update(['deleted_at' => now()]);
-
-        Log::info('Cascade deleted post and all its comments', [
-            'platform' => $platform,
-            'platform_post_id' => $platformPostId,
-        ]);
     }
 }

@@ -43,8 +43,6 @@ class SocialAccountController extends Controller
         try {
             $fullSync = $request->boolean('full_sync', false);
 
-            Log::info('Starting sync for account: ' . $account->platform_account_name . ' (' . $account->platform . ') full_sync: ' . ($fullSync ? 'yes' : 'no'));
-
             if ($fullSync) {
                 $options = [
                     'post_window_days' => 0,
@@ -96,8 +94,6 @@ class SocialAccountController extends Controller
                 'status' => 'disconnected',
                 'is_active' => false,
             ]);
-
-            Log::info('Account disconnected: ' . $account->id);
 
             return response()->json([
                 'message' => 'Account disconnected successfully',

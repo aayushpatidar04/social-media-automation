@@ -30,8 +30,6 @@ class AnalyzeCommentWithAI implements ShouldQueue
 
             $analysis = $service->analyzeComment($this->comment);
 
-            Log::info('Analysis complete for comment: ' . $this->comment->id, $analysis);
-
             // Update comment with analysis results
             $this->comment->update([
                 'sentiment' => $analysis['sentiment'],
@@ -84,8 +82,6 @@ class AnalyzeCommentWithAI implements ShouldQueue
             $existingLead->update([
                 'lead_score' => $analysis['lead_score'],
             ]);
-
-            Log::info('Lead updated: ' . $existingLead->id);
             return;
         }
 
@@ -106,7 +102,5 @@ class AnalyzeCommentWithAI implements ShouldQueue
             'lead_score' => $analysis['lead_score'],
             'lead_status' => 'new',
         ]);
-
-        Log::info('Lead created for comment: ' . $this->comment->id);
     }
 }

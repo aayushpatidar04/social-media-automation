@@ -24,11 +24,8 @@ class SyncTwitterComments implements ShouldQueue
 
     public function handle(TwitterService $twitter): void
     {
-        Log::info('Starting X sync for account: ' . $this->account->platform_account_name);
 
         $count = $twitter->syncComments($this->account);
-
-        Log::info('X sync completed. Mentions synced: ' . $count);
 
         \App\Models\ActivityLog::create([
             'organization_id' => $this->account->organization_id,

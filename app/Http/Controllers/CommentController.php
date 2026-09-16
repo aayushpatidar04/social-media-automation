@@ -164,8 +164,6 @@ class CommentController extends Controller
                 ]);
             }
 
-            Log::info('Fetched AI conversation: ' . $conversation->id);
-
             return response()->json([
                 'has_ai_response' => !empty($conversation->ai_response),
                 'ai_response' => $conversation->ai_response,
@@ -202,9 +200,6 @@ class CommentController extends Controller
                 return response()->json(['error' => 'Account not found'], 404);
             }
 
-            Log::info('Sending reply to comment: ' . $comment->id);
-            Log::info('Is AI response: ' . ($validated['is_ai_response'] ? 'YES' : 'NO'));
-
             // Publish to platform
             $published = $this->publishReply($comment, $validated['message']);
 
@@ -224,7 +219,7 @@ class CommentController extends Controller
                     'approved_at' => now(),
                     'is_ai_response' => $validated['is_ai_response'] ?? false,
                 ]);
-                Log::info('Updated AI conversation: ' . $aiConversation->id);
+                
             } else {
                 $aiConversation = AiConversation::create([
                     'organization_id' => $comment->socialAccount->organization_id,
@@ -237,7 +232,7 @@ class CommentController extends Controller
                     'approved_by_user_id' => Auth::id(),
                     'approved_at' => now(),
                 ]);
-                Log::info('Created new AI conversation (manual): ' . $aiConversation->id);
+                
             }
 
             // Update comment status
@@ -245,8 +240,6 @@ class CommentController extends Controller
                 'status' => 'replied',
                 'replied_at' => now(),
             ]);
-
-            Log::info('Comment marked as replied: ' . $comment->id);
 
             // Log activity
             \App\Models\ActivityLog::create([
@@ -299,8 +292,6 @@ class CommentController extends Controller
                 return response()->json(['error' => 'Account not found'], 404);
             }
 
-            Log::info('Approving AI response for comment: ' . $comment->id);
-
             $published = $this->publishReply($comment, $aiConversation->ai_response);
 
             if (!$published) {
@@ -317,8 +308,6 @@ class CommentController extends Controller
                 'status' => 'replied',
                 'replied_at' => now(),
             ]);
-
-            Log::info('AI response approved and published for comment: ' . $comment->id);
 
             return response()->json([
                 'message' => 'Response published successfully',
@@ -362,8 +351,6 @@ class CommentController extends Controller
                 'rejected_at' => now(),
             ]);
 
-            Log::info('AI response rejected for comment: ' . $comment->id);
-
             return response()->json([
                 'message' => 'Response rejected',
                 'status' => 'success',
@@ -389,8 +376,6 @@ class CommentController extends Controller
                 'status' => 'replied',
                 'replied_at' => now(),
             ]);
-
-            Log::info('Comment marked as responded: ' . $comment->id);
 
             return response()->json([
                 'message' => 'Comment marked as responded',

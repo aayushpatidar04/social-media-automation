@@ -16,28 +16,6 @@ class MetaWebhookController extends Controller
         }
 
         $payload = $request->all();
-        
-        Log::info('Meta webhook received', $request->all());
-
-        // if ($this->hasOwnInstagramComment($payload)) {
-        //     Log::info('Skipping own Instagram comment webhook', $payload);
-
-        //     return response()->json([
-        //         'success' => true,
-        //         'skipped' => true,
-        //         'reason' => 'own_instagram_comment',
-        //     ]);
-        // }
-
-        // if ($this->hasOwnFacebookPageComment($payload)) {
-        //     Log::info('Skipping own Facebook page comment webhook', $payload);
-
-        //     return response()->json([
-        //         'success' => true,
-        //         'skipped' => true,
-        //         'reason' => 'own_facebook_page_comment',
-        //     ]);
-        // }
 
         ProcessMetaWebhook::dispatch($request->all());
 
@@ -57,8 +35,6 @@ class MetaWebhookController extends Controller
             $mode === 'subscribe' &&
             $token === env('META_WEBHOOK_VERIFY_TOKEN')
         ) {
-            Log::info('Meta webhook verified');
-
             return response($challenge, 200);
         }
 

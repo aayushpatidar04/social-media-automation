@@ -24,11 +24,8 @@ class SyncLinkedInComments implements ShouldQueue
 
     public function handle(LinkedInService $linkedin): void
     {
-        Log::info('Starting LinkedIn sync for account: ' . $this->account->platform_account_name . ' (full_sync: ' . ($this->fullSync ? 'yes' : 'no') . ')');
 
         $count = $linkedin->syncComments($this->account, $this->options);
-
-        Log::info('LinkedIn sync completed. Comments synced: ' . $count);
 
         \App\Models\ActivityLog::create([
             'organization_id' => $this->account->organization_id,
