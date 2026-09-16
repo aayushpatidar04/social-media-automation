@@ -346,8 +346,7 @@ class YoutubeService
     {
         $accessToken = $this->validToken($account);
 
-        $response = Http::withToken($accessToken)->post("{$this->baseUrl}/comments", [
-            'part' => 'snippet',
+        $response = Http::withToken($accessToken)->post("{$this->baseUrl}/comments?part=snippet", [
             'snippet' => [
                 'parentId' => $commentId,
                 'textOriginal' => $message,
