@@ -177,7 +177,7 @@ class YoutubeController extends Controller
 
         $response = $youtube->replyToComment(
             $comment->socialAccount,
-            $comment->platform_comment_id,
+            $comment->parent_id ?? $comment->platform_comment_id,
             $request->message
         );
 
