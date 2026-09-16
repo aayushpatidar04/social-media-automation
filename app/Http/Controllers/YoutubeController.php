@@ -175,9 +175,13 @@ class YoutubeController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        $parentPlatformId = $comment->parent_id
+            ? SocialComment::find($comment->parent_id)?->platform_comment_id
+            : $comment->platform_comment_id;
+
         $response = $youtube->replyToComment(
             $comment->socialAccount,
-            $comment->parent_id ?? $comment->platform_comment_id,
+            $parentPlatformId,
             $request->message
         );
 
