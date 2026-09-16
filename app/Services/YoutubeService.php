@@ -194,7 +194,7 @@ class YoutubeService
         $totalNew = $comment->wasRecentlyCreated ? 1 : 0;
 
         if ($comment->wasRecentlyCreated && !$isFullSync) {
-            AnalyzeWithOllama::dispatch($comment);
+            AnalyzeWithOllama::dispatch($comment)->onConnection('sync');
         }
 
         foreach (data_get($thread, 'replies.comments', []) as $reply) {
@@ -234,7 +234,7 @@ class YoutubeService
                 $totalNew++;
 
                 if (!$isFullSync) {
-                    AnalyzeWithOllama::dispatch($storedReply);
+                    AnalyzeWithOllama::dispatch($storedReply)->onConnection('sync');
                 }
             }
         }

@@ -83,7 +83,7 @@ class GenerateOllamaResponse implements ShouldQueue
                 'ai_response_text' => $response,
             ]);
 
-            PublishAutoReply::dispatch($this->comment);
+            PublishAutoReply::dispatch($this->comment)->onConnection('sync');
 
         } catch (\Exception $e) {
             Log::error('Error generating response: ' . $e->getMessage());

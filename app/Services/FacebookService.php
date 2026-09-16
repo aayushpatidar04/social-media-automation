@@ -147,7 +147,7 @@ class FacebookService
                         ) {
                             AnalyzeWithOllama::dispatch(
                                 $storedRootComment
-                            );
+                            )->onConnection('sync');
                         }
                     }
 
@@ -193,7 +193,7 @@ class FacebookService
                             ) {
                                 AnalyzeWithOllama::dispatch(
                                     $storedReply
-                                );
+                                )->onConnection('sync');
                             }
                         }
                     }
@@ -867,7 +867,7 @@ class FacebookService
 
             AnalyzeWithOllama::dispatch(
                 $storedComment
-            );
+            )->onConnection('sync');
         }
 
         return $storedComment;

@@ -123,7 +123,7 @@ class LinkedInService
 
                     // Only dispatch AI in normal sync
                     if (!$isFullSync && $this->shouldAnalyzeComment($account, $storedComment)) {
-                        AnalyzeWithOllama::dispatch($storedComment);
+                        AnalyzeWithOllama::dispatch($storedComment)->onConnection('sync');
                     }
                 }
             }
@@ -202,7 +202,7 @@ class LinkedInService
 
         if ($storedComment?->wasRecentlyCreated) {
             if ($this->shouldAnalyzeComment($account, $storedComment)) {
-                AnalyzeWithOllama::dispatch($storedComment);
+                AnalyzeWithOllama::dispatch($storedComment)->onConnection('sync');
             }
         }
 

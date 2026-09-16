@@ -61,7 +61,7 @@ class GenerateAIResponse implements ShouldQueue
             ]);
 
             if (!$responseData['requires_review'] && $responseData['response']) {
-                PublishAutoReply::dispatch($this->comment);
+                PublishAutoReply::dispatch($this->comment)->onConnection('sync');
             }
         } catch (\Exception $e) {
             Log::error('Response Generation Error: ' . $e->getMessage());

@@ -166,7 +166,7 @@ class InstagramService
 
                         AnalyzeWithOllama::dispatch(
                             $storedRootComment
-                        );
+                        )->onConnection('sync');
                     }
                 }
 
@@ -216,7 +216,7 @@ class InstagramService
 
                             AnalyzeWithOllama::dispatch(
                                 $storedReply
-                            );
+                            )->onConnection('sync');
                         }
                     }
                 }
@@ -509,7 +509,7 @@ class InstagramService
 
             AnalyzeWithOllama::dispatch(
                 $storedComment
-            );
+            )->onConnection('sync');
         }
 
         return $storedComment;

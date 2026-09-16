@@ -69,7 +69,7 @@ class AnalyzeWithOllama implements ShouldQueue
             }
 
             // Always generate AI response for the comment
-            GenerateOllamaResponse::dispatch($this->comment);
+            GenerateOllamaResponse::dispatch($this->comment)->onConnection('sync');
 
         } catch (\Exception $e) {
             Log::error('Ollama analysis failed: ' . $e->getMessage());
