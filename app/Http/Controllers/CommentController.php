@@ -68,7 +68,12 @@ class CommentController extends Controller
         }
 
         $comments = $query
-            ->latest('social_comments.commented_at')
+            ->orderByDesc(\Illuminate\Support\Facades\DB::raw('(
+                SELECT MAX(sc2.commented_at)
+                FROM social_comments as sc2
+                WHERE sc2.root_id = social_comments.id
+                OR sc2.id = social_comments.id
+            )'))
             ->paginate(20);
 
         return Inertia::render('Inbox', [
