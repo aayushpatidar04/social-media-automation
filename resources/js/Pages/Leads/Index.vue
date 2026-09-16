@@ -232,7 +232,7 @@
                                 <div class="flex flex-col items-end gap-2 ml-4">
                                     <LoadingButton
                                         v-if="lead.lead_status === 'new'"
-                                        :loading="loading.status[lead.id]"
+                                        :loading="loadingStatus[lead.id]"
                                         :loading-text="'Saving...'"
                                         base-classes="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded text-xs"
                                         @click="
@@ -243,7 +243,7 @@
                                     </LoadingButton>
                                     <LoadingButton
                                         v-if="lead.lead_status === 'contacted'"
-                                        :loading="loading.status[lead.id]"
+                                        :loading="loadingStatus[lead.id]"
                                         :loading-text="'Saving...'"
                                         base-classes="px-3 py-1.5 bg-purple-700 hover:bg-purple-600 text-white rounded text-xs"
                                         @click="
@@ -257,7 +257,7 @@
                                             lead.lead_status !== 'converted' &&
                                             lead.lead_status !== 'lost'
                                         "
-                                        :loading="loading.status[lead.id]"
+                                        :loading="loadingStatus[lead.id]"
                                         :loading-text="'Saving...'"
                                         base-classes="px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded text-xs"
                                         @click="
@@ -268,7 +268,7 @@
                                     </LoadingButton>
                                     <LoadingButton
                                         v-if="lead.lead_status !== 'lost'"
-                                        :loading="loading.status[lead.id]"
+                                        :loading="loadingStatus[lead.id]"
                                         :loading-text="'Saving...'"
                                         base-classes="px-3 py-1.5 bg-red-900 hover:bg-red-800 text-red-200 rounded text-xs"
                                         @click="updateStatus(lead.id, 'lost')"
